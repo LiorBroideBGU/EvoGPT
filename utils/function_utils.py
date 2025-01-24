@@ -118,3 +118,48 @@ def get_error_functions(stacktrace: str, code: str):
 
     return list(error_functions)
 
+def remove_functions_by_name(function_names, code):
+    """
+    Removes functions with specified names from the given Java code.
+
+    :param function_names: A list of function names to remove.
+    :param code: The Java code string containing the functions.
+    :return: The updated Java code string with specified functions removed.
+    """
+    # Split the code into lines
+    code_lines = code.splitlines()
+
+    # Create a pattern to match function definitions for the provided names
+    function_pattern = re.compile(r'\s*public void (' + '|'.join(map(re.escape, function_names)) + r')\s*\(')
+
+    retained_lines = []
+    skip_lines = False
+    brace_count = 0
+
+    for i, line in enumerate(code_lines):
+        if skip_lines:
+            # Count braces to track function block
+            brace_count += line.count('{')
+            brace_count -= line.count('}')
+            if brace_count == 0:  # End of function block
+                skip_lines = False
+            continue
+
+        # If we find a function matching the pattern, skip it
+        if function_pattern.search(line):
+            # Look backward for the @Test annotation or similar markers
+            for j in range(len(retained_lines) - 1, -1, -1):
+                if re.match(r'\s*@Test', retained_lines[j]):
+                    retained_lines.pop(j)  # Remove @Test line
+                    break
+
+            # Start skipping lines for the function block
+            skip_lines = True
+            brace_count = line.count('{') - line.count('}')
+            continue
+
+        # Otherwise, retain the line
+        retained_lines.append(line)
+
+    return '\n'.join(retained_lines)
+
