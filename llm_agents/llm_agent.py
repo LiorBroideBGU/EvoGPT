@@ -2,11 +2,11 @@ from langchain_openai import ChatOpenAI
 from llm_agents.chat_message_history import ChatMessageHistory
 
 class LLMAgent:
-    def __init__(self, api_key, model, temperature):
+    def __init__(self, api_key, model, temperature, system_prompt_path):
         self.model = ChatOpenAI(api_key=api_key, model=model, temperature=temperature)
         self.chat_store = {}
         self.long_term_memory = {}
-
+        self.system_prompt = open(system_prompt_path, 'r').read()
     def get_chat_history(self, session_id: str) -> ChatMessageHistory:
         """
         Retrieve or create chat history for the session
