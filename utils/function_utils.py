@@ -70,3 +70,51 @@ def get_class_imports(source_folder: str, stacktrace: str):
         for ref in refs:
             imports.append(f"import {ref}.{name};")
     return imports
+
+def get_error_functions(stacktrace: str, code: str):
+    """
+    Processes the code based on the stack trace. Handles two cases:
+    1. Runtime failures: Identifies test functions matching test names in the stack trace.
+    2. Compilation errors: Identifies test functions associated with the error lines.
+
+    :param stacktrace: The stack trace string containing errors or failures.
+    :param code: The Java code string containing test functions.
+    :return: A list of function names causing runtime or compile errors.
+    """
+    # Extract test names for runtime failures
+    runtime_failures = re.findall(r'\d+\)\s+([\w\d_]+)\s*\(.*?\)', stacktrace)
+
+    # Extract line numbers for compilation errors
+    compilation_errors = re.findall(r':(\d+): error:', stacktrace)
+    compilation_lines = sorted(set(int(line) for line in compilation_errors), reverse=True)
+
+    # Split the code into lines
+    code_lines = code.splitlines()
+
+    # List to store names of functions causing errors
+    error_functions = set(runtime_failures)
+
+    # Handle compilation errors: Identify test functions at the error lines
+    for line_number in compilation_lines:
+        # Ensure the line number is within bounds
+        if line_number > len(code_lines) or line_number < 1:
+            continue
+
+        # Locate the start of the test function
+        function_start = None
+        for i in range(line_number - 1, -1, -1):  # Search upwards
+            if re.match(r'\s*@Test', code_lines[i]):
+                function_start = i
+                break
+        if function_start is None:
+            continue
+
+        # Locate the function name
+        for j in range(function_start, len(code_lines)):
+            match = re.match(r'\s*public void ([\w\d_]+)\s*\(', code_lines[j])
+            if match:
+                error_functions.add(match.group(1))
+                break
+
+    return list(error_functions)
+
