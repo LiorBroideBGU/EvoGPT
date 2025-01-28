@@ -1,13 +1,18 @@
 from llm_agents.llm_agent import LLMAgent
 from langchain.schema import SystemMessage, HumanMessage
 import os
-
+from utils.function_utils import *
+from utils.java_executor import *
 
 class UnitTestGenerator(LLMAgent):
     def __init__(self, api_key,model, temperature):
         super().__init__(api_key, model, temperature)
         self.input_prompt = open(os.path.abspath(os.path.join("..", "prompts", "unit_test_generator", "input_prompt.txt")),'r').read()
         self.system_prompt = open(os.path.abspath(os.path.join("..", "prompts", "unit_test_generator", "system_prompt.txt")),'r').read()
+        self.repair_prompt = open(os.path.abspath(os.path.join("..", "prompts", "unit_test_generator", "repair_prompt.txt")),'r').read()
+        self.syntax_error_prompt = open(os.path.abspath(os.path.join("..", "prompts", "unit_test_generator", "syntax_error_prompt.txt")),'r').read()
+
+
 
     def get_unit_test_for_class(self, session_id: str) -> str:
         # Retrieve long-term memory specific to the session
@@ -29,4 +34,31 @@ class UnitTestGenerator(LLMAgent):
         self.update_long_term_memory(session_id, self.input_prompt)
 
         return response.content
+
+    def generation_repair_loop(self, java_file_path, project_id, iterations=3):
+        java_code = read_java_file_as_string(java_file_path)
+        java_class_name = java_file_path.split("\\")[-1].split(".")[0]
+        self.input_prompt.format(java_code)
+        current_test_suite = self.get_unit_test_for_class(session_id='session1')
+        test_test_file_path = os.path.abspath(os.path.join("..", "results", "unit_tests", project_id, f"{java_class_name}Test.java"))
+        os.makedirs(os.path.dirname(test_test_file_path), exist_ok=True)
+        save_test_suite(current_test_suite, test_test_file_path)
+        save_test_suite(java_code, os.path.abspath(os.path.join("..", "results", "unit_tests", project_id, f"{java_class_name}.java")))
+
+        ## Generation repair loop
+        success, output = False, None
+        executor = JavaExecutor(java_file_path)
+        for iteration in range(iterations):
+            try:
+                executor.check_java_code_syntax()
+            except SyntaxError as e:
+                success, output = False, e
+                self.update_long_term_memory(self.repair_prompt.format(output))
+                current_test_suite = self.get_unit_test_for_class(session_id='session1')
+
+            success, output = executor.compile_java()
+            if not success:
+                unimport_classes = get_class_imports(extract_project_name(java_file_path))
+                if unimport_classes:
+                    current_test_suite = add_imports(unimport_classes, current_test_suite)
 

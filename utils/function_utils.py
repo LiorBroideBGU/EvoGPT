@@ -1,5 +1,4 @@
 import zipfile
-import javalang
 from typing import List
 import os
 import re
@@ -17,16 +16,7 @@ def unzip_dataset(dataset_name: str, target_path: str, dataset_path: str):
         zip_ref.extractall(target_path)
 
 
-def syntax_java_code(java_code):
-    """
-    Checks if the java code is syntactically correct.
-    :param java_code:
-    :return:
-    """
-    try:
-        tree = javalang.parse.parse(java_code)
-    except Exception as e:
-        raise SyntaxError(f"Syntax error in java code: {e}")
+
 
 
 def add_imports(imports: List[str], java_code: str):
@@ -192,4 +182,30 @@ def clean_java_code(code: str) -> str:
 
     return cleaned_code
 
+def read_java_file_as_string(java_file_path):
+    try:
+        with open(java_file_path, "r", encoding="utf-8") as file:
+            java_code = file.read()
+            return java_code
+    except FileNotFoundError:
+        print(f"File not found: {java_file_path}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
+
+def save_test_suite(test_suite_code,test_file_path):
+    try:
+        with open(test_file_path, "w", encoding="utf-8") as file:
+            file.write(test_suite_code)
+    except Exception as e:
+        raise Exception(f"An error occurred: {e}")
+
+
+def extract_project_name(path: str):
+    path = os.path.normpath(path)
+    path_parts = path.split(os.sep)
+    if 'benchmarks' in path_parts:
+        benchmarks_index = path_parts.index('benchmarks')
+        if benchmarks_index + 1 < len(path_parts):
+            return os.path.join(*path_parts[:benchmarks_index + 2])
+    return None

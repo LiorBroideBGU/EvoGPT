@@ -1,12 +1,26 @@
 import os
 import subprocess
+import javalang
+
 class JavaExecutor:
-    def __init__(self, java_file_path, classpath):
+    def __init__(self, java_file_path):
         self.java_file_path = java_file_path
-        self.classpath = classpath
+
+        self.classpath = os.path.abspath(os.path.join("..", "lib", "jars"))
         with open(self.java_file_path, "r", encoding="utf-8") as file:
             self.java_code = file.read()
         self.java_file_name = os.path.basename(java_file_path).replace(".java", "")
+
+    def check_java_code_syntax(self):
+        """
+        Checks if the java code is syntactically correct.
+        :param java_code:
+        :return:
+        """
+        try:
+            tree = javalang.parse.parse(self.java_code)
+        except Exception as e:
+            raise SyntaxError(f"Syntax error in java code: {e}")
 
     def compile_java(self):
         """
