@@ -118,48 +118,78 @@ def get_error_functions(stacktrace: str, code: str):
 
     return list(error_functions)
 
-def remove_functions_by_name(function_names, code):
-    """
-    Removes functions with specified names from the given Java code.
 
-    :param function_names: A list of function names to remove.
-    :param code: The Java code string containing the functions.
-    :return: The updated Java code string with specified functions removed.
+def remove_junit_tests(java_code: str, test_names: list) -> str:
     """
+    Removes specified JUnit test functions (including @Test annotations) from a Java code block.
+
+    Args:
+        java_code (str): The Java code as a string.
+        test_names (list): List of test case names (function names) to remove.
+
+    Returns:
+        str: The Java code with the specified test functions removed.
+    """
+    if not test_names:
+        return clean_java_code(java_code)
+    # Create a set for faster lookup of test names
+    test_names_set = set(test_names)
+
     # Split the code into lines
-    code_lines = code.splitlines()
+    lines = java_code.splitlines()
+    result = []
+    skip_block = False
 
-    # Create a pattern to match function definitions for the provided names
-    function_pattern = re.compile(r'\s*public void (' + '|'.join(map(re.escape, function_names)) + r')\s*\(')
+    for line in lines:
+        stripped_line = line.strip()
 
-    retained_lines = []
-    skip_lines = False
-    brace_count = 0
+        # Check if this line marks the start of a test function with @Test annotation
+        if stripped_line.startswith("@Test"):
+            skip_block = True  # Start skipping this block
+            continue  # Skip the @Test line
 
-    for i, line in enumerate(code_lines):
-        if skip_lines:
-            # Count braces to track function block
-            brace_count += line.count('{')
-            brace_count -= line.count('}')
-            if brace_count == 0:  # End of function block
-                skip_lines = False
+        # Check if the function definition is part of the test names
+        if skip_block and re.match(r"public\s+void\s+(\w+)", stripped_line):
+            match = re.search(r"public\s+void\s+(\w+)", stripped_line)
+            if match and match.group(1) in test_names_set:
+                continue  # Skip this line and keep skipping
+            else:
+                skip_block = False  # Function not in test names, stop skipping
+
+        # Skip lines inside the function block
+        if skip_block:
+            if stripped_line == "}":
+                skip_block = False  # End of function block
             continue
 
-        # If we find a function matching the pattern, skip it
-        if function_pattern.search(line):
-            # Look backward for the @Test annotation or similar markers
-            for j in range(len(retained_lines) - 1, -1, -1):
-                if re.match(r'\s*@Test', retained_lines[j]):
-                    retained_lines.pop(j)  # Remove @Test line
-                    break
+        # Otherwise, keep the line
+        result.append(line)
 
-            # Start skipping lines for the function block
-            skip_lines = True
-            brace_count = line.count('{') - line.count('}')
-            continue
+    # Join the cleaned lines back together
+    code = "\n".join(result)
+    return clean_java_code(code)
 
-        # Otherwise, retain the line
-        retained_lines.append(line)
 
-    return '\n'.join(retained_lines)
+def clean_java_code(code: str) -> str:
+    """
+    Cleans a Java code block by removing comments and redundant blank lines.
+    :param code (str): The Java code block as a string.
+    :return str: Cleaned Java code block.
+    """
+    # Remove single-line comments (//...)
+    code = re.sub(r"//.*", "", code)
+
+    # Remove multi-line comments (/* ... */)
+    code = re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
+
+    # Remove redundant blank lines
+    # First remove any leading/trailing whitespaces from each line
+    lines = code.splitlines()
+    # Filter out empty lines
+    non_empty_lines = [line for line in lines if line and bool(line.strip())]
+    # Join the cleaned lines with a single newline
+    cleaned_code = "\n".join(non_empty_lines)
+
+    return cleaned_code
+
 
