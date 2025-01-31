@@ -37,6 +37,7 @@ class UnitTestGenerator(LLMAgent):
 
     def generation_repair_loop(self, java_file_path, project_id, iterations=3):
         java_code = read_java_file_as_string(java_file_path)
+        java_code = clean_java_code(java_code)
         java_class_name = java_file_path.split("\\")[-1].split(".")[0]
         self.input_prompt.format(java_code)
         current_test_suite = self.get_unit_test_for_class(session_id='session1')
@@ -61,4 +62,17 @@ class UnitTestGenerator(LLMAgent):
                 unimport_classes = get_class_imports(extract_project_name(java_file_path))
                 if unimport_classes:
                     current_test_suite = add_imports(unimport_classes, current_test_suite)
+                    self.edit_history_response('session1', current_test_suite)
+                    save_test_suite(current_test_suite, test_test_file_path)
 
+            success, output = executor.run_java()
+            if not success:
+                self.update_long_term_memory('session1', self.repair_prompt.format(output))
+                current_test_suite = self.get_unit_test_for_class(session_id='session1')
+                save_test_suite(current_test_suite, test_test_file_path)
+
+            else:
+                return
+
+        current_test_suite = remove_junit_tests(current_test_suite, output)
+        save_test_suite(current_test_suite, test_test_file_path)

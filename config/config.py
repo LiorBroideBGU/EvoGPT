@@ -1,0 +1,5 @@
+
+API_KEY = '<KEY>'
+TEMPERATURE = 0.5
+MODEL = 'gpt-4o-mini'
+PROJECT = '<PROJECT>'

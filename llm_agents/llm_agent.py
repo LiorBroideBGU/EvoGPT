@@ -6,6 +6,7 @@ class LLMAgent:
         self.chat_model = ChatOpenAI(api_key=api_key, model=model, temperature=temperature)
         self.chat_store = {}
         self.long_term_memory = {}
+        
     def get_chat_history(self, session_id: str) -> ChatMessageHistory:
         """
         Retrieve or create chat history for the session
@@ -40,3 +41,6 @@ class LLMAgent:
         :return: The history prompt
         """
         return ". ".join(self.long_term_memory.get(session_id, []))
+
+    def edit_history_response(self, session_id: str, fixed_response: str):
+        self.chat_store[session_id][0] = fixed_response

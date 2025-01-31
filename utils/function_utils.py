@@ -109,7 +109,7 @@ def get_error_functions(stacktrace: str, code: str):
     return list(error_functions)
 
 
-def remove_junit_tests(java_code: str, test_names: list) -> str:
+def remove_junit_tests_using_test_names(java_code: str, test_names: list) -> str:
     """
     Removes specified JUnit test functions (including @Test annotations) from a Java code block.
 
@@ -159,6 +159,10 @@ def remove_junit_tests(java_code: str, test_names: list) -> str:
     code = "\n".join(result)
     return clean_java_code(code)
 
+
+def remove_junit_tests(java_code: str, stacktrace: str) -> str:
+    function_list = get_error_functions(stacktrace, java_code)
+    return remove_junit_tests_using_test_names(java_code, function_list)
 
 def clean_java_code(code: str) -> str:
     """
