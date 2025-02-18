@@ -2,6 +2,7 @@ import zipfile
 from typing import List
 import os
 import re
+import javalang
 
 def unzip_dataset(dataset_name: str, target_path: str, dataset_path: str):
     """
@@ -113,58 +114,56 @@ def get_error_functions(stacktrace: str, code: str):
     return list(error_functions)
 
 
-def remove_junit_tests_using_test_names(java_code: str, test_names: list) -> str:
+def remove_junit_tests_using_test_names(java_code: str, function_names: list) -> str:
     """
-    Removes specified JUnit test functions (including @Test annotations) from a Java code block.
+    Removes specified Java functions from the code.
 
     Args:
         java_code (str): The Java code as a string.
-        test_names (list): List of test case names (function names) to remove.
+        function_names (list): List of function names to remove.
 
     Returns:
-        str: The Java code with the specified test functions removed.
+        str: The modified Java code.
     """
-    ##### NEED TO FIX THIS!
-    if not test_names:
-        return clean_java_code(java_code)
+    tree = javalang.parse.parse(java_code)
 
-    test_names_set = set(test_names)
+    # Store original lines for rebuilding
     lines = java_code.splitlines()
-    result = []
-    skip_block = False
-    inside_test = False
 
-    for i in range(len(lines)):
-        line = lines[i]
-        stripped_line = line.strip()
+    # List of line ranges to remove
+    remove_ranges = []
 
-        # Detect the start of a test function
-        if stripped_line.startswith("@Test"):
-            inside_test = True  # Mark that we are inside a test block
-            result.append(line)  # Keep the @Test annotation for now
-            continue
+    # Traverse AST and find test methods to remove
+    for path, node in tree.filter(javalang.tree.MethodDeclaration):
+        if node.name in function_names:
+            start_line = node.position.line - 1  # Convert to zero-based index
 
-        # Detect function names that match the test names
-        match = re.match(r"\s*public\s+void\s+(\w+)\s*\(", stripped_line)
-        if inside_test and match:
-            function_name = match.group(1)
-            if function_name in test_names_set:
-                skip_block = True  # Start skipping this function
-                inside_test = False  # Reset because we will remove this test
-                result.pop()  # Remove the previous @Test annotation
-                continue  # Skip this function declaration line
+            # Find if there is an @Test annotation above the method
+            annotation_line = None
+            for i in range(start_line - 1, -1, -1):
+                if lines[i].strip().startswith("@Test"):
+                    annotation_line = i
+                    break
 
-        # If skipping a block, check for the end
-        if skip_block:
-            if stripped_line == "}":
-                skip_block = False  # End of function block
-            continue  # Skip the function content
+            remove_start = annotation_line if annotation_line is not None else start_line
 
-        # Keep valid lines
-        result.append(line)
+            # Find method end (last closing bracket)
+            end_line = start_line + 1
+            brace_count = 0
+            for i in range(start_line, len(lines)):
+                brace_count += lines[i].count("{") - lines[i].count("}")
+                if brace_count == 0:
+                    end_line = i
+                    break
 
-    # Join the cleaned lines back together
-    return clean_java_code("\n".join(result))
+            remove_ranges.append((remove_start, end_line))
+
+    # Remove lines from bottom to top to avoid index shifting
+    for start, end in sorted(remove_ranges, reverse=True):
+        del lines[start:end + 1]
+
+    # Reconstruct Java code
+    return "\n".join(lines)
 
 def remove_junit_tests(java_code: str, stacktrace: str) -> str:
     function_list = get_error_functions(stacktrace, java_code)
@@ -212,11 +211,12 @@ def save_test_suite(test_suite_code,test_file_path):
 
 
 def extract_project_name(path: str):
-    path = os.path.normpath(path)
+    path = os.path.normpath(path)  # Normalize path separators
     path_parts = path.split(os.sep)
+
     if 'benchmarks' in path_parts:
         benchmarks_index = path_parts.index('benchmarks')
         if benchmarks_index + 1 < len(path_parts):
-            return os.path.join(*path_parts[:benchmarks_index + 2])
-    return None
+            return os.sep.join(path_parts[:benchmarks_index + 2])  # Ensure proper path format
 
+    return None

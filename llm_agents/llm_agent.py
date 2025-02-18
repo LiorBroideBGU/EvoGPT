@@ -1,5 +1,6 @@
 from langchain_openai import ChatOpenAI
 from llm_agents.chat_message_history import ChatMessageHistory
+from langchain.schema import SystemMessage
 
 class LLMAgent:
     def __init__(self, api_key, model, temperature):
@@ -35,4 +36,4 @@ class LLMAgent:
         return ". ".join(self.long_term_memory.get(session_id, []))
 
     def edit_history_response(self, session_id: str, fixed_response: str):
-        self.chat_store[session_id][0] = fixed_response
+        self.chat_store[session_id].messages[1] = SystemMessage(content=fixed_response)

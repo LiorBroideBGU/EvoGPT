@@ -33,14 +33,19 @@ class JavaExecutor:
         :return: Stack-trace from the compiler process.
         """
         try:
+            source_code_name = self.java_file_name.replace("Test", "")
+            build_path = os.path.join(os.path.dirname(self.java_file_path))
+            output_dir = f"{build_path}\\{source_code_name}"
             result = subprocess.run(
-                ["javac", "-cp", self.classpath, self.java_file_path, '-d',os.path.join(os.path.dirname(self.java_file_path), "build") ],
+                ["javac", "-cp", self.classpath, self.java_file_path, '-d',output_dir],
                 capture_output=True,
                 text=True
             )
 
             if result.returncode != 0:
+                print("Compilation Error:", result.stderr)
                 return False, result.stderr
+            print("Java Compilation Successful")
             return True, 'Compilation successful'
 
         except Exception as e:
@@ -56,8 +61,9 @@ class JavaExecutor:
         try:
 
             # Compile the Java file
+            source_code_name = self.java_file_name.replace("Test", "")
             build_path = os.path.join(os.path.dirname(self.java_file_path))
-            output_dir = f"{build_path}\\{self.java_file_name}"
+            output_dir = f"{build_path}\\{source_code_name}"
             os.makedirs(output_dir, exist_ok=True)
             compile_result = subprocess.run(
                 [

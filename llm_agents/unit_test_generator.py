@@ -39,10 +39,10 @@ class UnitTestGenerator(LLMAgent):
         java_class_name = java_file_path.split("\\")[-1].split(".")[0]
         self.update_long_term_memory('session1',self.input_prompt.format(java_code))
         current_test_suite = self.get_unit_test_for_class(session_id='session1')
-        test_file_path = os.path.abspath(os.path.join("results", "unit_tests", project_id, f"{java_class_name}Test.java"))
+        test_file_path = os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name, f"{java_class_name}Test.java"))
         os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
         save_test_suite(current_test_suite, test_file_path)
-        save_test_suite(java_code, os.path.abspath(os.path.join("results", "unit_tests", project_id, f"{java_class_name}.java")))
+        save_test_suite(java_code, os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name, f"{java_class_name}.java")))
 
         ## Generation repair loop
         success, output = False, None
