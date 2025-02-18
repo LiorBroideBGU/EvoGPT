@@ -36,8 +36,12 @@ def get_class_imports(source_folder: str, stacktrace: str):
     :param stacktrace: The import errors received from the compiler.
     """
     pattern = r"error:\s*package\s+(\S+)\s+does\s+not\s+exist"
+    pattern_missing_imports = r"symbol:\s+variable\s+(\w+)"
+    missing_classes = re.findall(pattern_missing_imports, stacktrace)
+    missing_classes = list(set(missing_classes))
     class_names = re.findall(pattern, stacktrace)
     class_names = list(set(class_names))
+    class_names = class_names + missing_classes
     class_map = {}  # {class_name: [package_reference, ...]}
     for root, dirs, files in os.walk(source_folder):
         for file in files:
@@ -120,45 +124,47 @@ def remove_junit_tests_using_test_names(java_code: str, test_names: list) -> str
     Returns:
         str: The Java code with the specified test functions removed.
     """
+    ##### NEED TO FIX THIS!
     if not test_names:
         return clean_java_code(java_code)
-    # Create a set for faster lookup of test names
-    test_names_set = set(test_names)
 
-    # Split the code into lines
+    test_names_set = set(test_names)
     lines = java_code.splitlines()
     result = []
     skip_block = False
+    inside_test = False
 
-    for line in lines:
+    for i in range(len(lines)):
+        line = lines[i]
         stripped_line = line.strip()
 
-        # Check if this line marks the start of a test function with @Test annotation
+        # Detect the start of a test function
         if stripped_line.startswith("@Test"):
-            skip_block = True  # Start skipping this block
-            continue  # Skip the @Test line
+            inside_test = True  # Mark that we are inside a test block
+            result.append(line)  # Keep the @Test annotation for now
+            continue
 
-        # Check if the function definition is part of the test names
-        if skip_block and re.match(r"public\s+void\s+(\w+)", stripped_line):
-            match = re.search(r"public\s+void\s+(\w+)", stripped_line)
-            if match and match.group(1) in test_names_set:
-                continue  # Skip this line and keep skipping
-            else:
-                skip_block = False  # Function not in test names, stop skipping
+        # Detect function names that match the test names
+        match = re.match(r"\s*public\s+void\s+(\w+)\s*\(", stripped_line)
+        if inside_test and match:
+            function_name = match.group(1)
+            if function_name in test_names_set:
+                skip_block = True  # Start skipping this function
+                inside_test = False  # Reset because we will remove this test
+                result.pop()  # Remove the previous @Test annotation
+                continue  # Skip this function declaration line
 
-        # Skip lines inside the function block
+        # If skipping a block, check for the end
         if skip_block:
             if stripped_line == "}":
                 skip_block = False  # End of function block
-            continue
+            continue  # Skip the function content
 
-        # Otherwise, keep the line
+        # Keep valid lines
         result.append(line)
 
     # Join the cleaned lines back together
-    code = "\n".join(result)
-    return clean_java_code(code)
-
+    return clean_java_code("\n".join(result))
 
 def remove_junit_tests(java_code: str, stacktrace: str) -> str:
     function_list = get_error_functions(stacktrace, java_code)
@@ -213,3 +219,4 @@ def extract_project_name(path: str):
         if benchmarks_index + 1 < len(path_parts):
             return os.path.join(*path_parts[:benchmarks_index + 2])
     return None
+

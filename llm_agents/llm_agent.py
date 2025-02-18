@@ -23,16 +23,8 @@ class LLMAgent:
         :param session_id: The chat session id
         :param input: The input string (response or prompt)
         """
-        if session_id not in self.long_term_memory:
-            self.long_term_memory[session_id] = []
-
-        # Add input to long-term memory if it's meaningful (e.g., only if input is long enough)
-        if len(input) > 20:
-            self.long_term_memory[session_id].append(f"User said: {input}")
-
-        # Keep only the last 5 items in long-term memory
-        if len(self.long_term_memory[session_id]) > 5:
-            self.long_term_memory[session_id] = self.long_term_memory[session_id][-5:]
+        chat_history = self.get_chat_history(session_id)
+        chat_history.add_user_message(input)
 
     def get_long_term_memory(self, session_id: str) -> str:
         """

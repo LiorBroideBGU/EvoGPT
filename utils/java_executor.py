@@ -6,7 +6,11 @@ class JavaExecutor:
     def __init__(self, java_file_path):
         self.java_file_path = java_file_path
 
-        self.classpath = os.path.abspath(os.path.join("..", "lib", "jars"))
+        self.classpath = os.path.abspath(os.path.join("lib", "jars"))
+        jar_files = [f for f in os.listdir(self.classpath) if f.endswith('.jar')]
+
+        # Construct the classpath by joining all JAR files
+        self.classpath = os.pathsep.join([os.path.join(self.classpath, jar) for jar in jar_files])
         with open(self.java_file_path, "r", encoding="utf-8") as file:
             self.java_code = file.read()
         self.java_file_name = os.path.basename(java_file_path).replace(".java", "")
@@ -29,12 +33,8 @@ class JavaExecutor:
         :return: Stack-trace from the compiler process.
         """
         try:
-            jar_files = [f for f in os.listdir(self.classpath) if f.endswith('.jar')]
-
-            # Construct the classpath by joining all JAR files
-            self.classpath = os.pathsep.join([os.path.join(self.classpath, jar) for jar in jar_files])
             result = subprocess.run(
-                ["javac", "-cp", self.classpath, self.java_file_path],
+                ["javac", "-cp", self.classpath, self.java_file_path, '-d',os.path.join(os.path.dirname(self.java_file_path), "build") ],
                 capture_output=True,
                 text=True
             )
@@ -54,17 +54,15 @@ class JavaExecutor:
         :return: (success, output) tuple
         """
         try:
-            # Ensure the classpath includes all JAR files
-            jar_files = [os.path.join(self.classpath, f) for f in os.listdir(self.classpath) if f.endswith('.jar')]
-            classpath_combined = os.pathsep.join(jar_files)
 
             # Compile the Java file
-            output_dir = f"build\\{self.java_file_name}"
+            build_path = os.path.join(os.path.dirname(self.java_file_path))
+            output_dir = f"{build_path}\\{self.java_file_name}"
             os.makedirs(output_dir, exist_ok=True)
             compile_result = subprocess.run(
                 [
                     "javac",
-                    "-cp", classpath_combined,
+                    "-cp", self.classpath,
                     "-d", output_dir,
                     self.java_file_path
                 ],
@@ -80,7 +78,7 @@ class JavaExecutor:
             result = subprocess.run(
                 [
                     "java",
-                    "-cp", f"{output_dir}{os.pathsep}{classpath_combined}",
+                    "-cp", f"{output_dir}{os.pathsep}{self.classpath}",
                     "org.junit.runner.JUnitCore",
                     self.java_file_name
                 ],

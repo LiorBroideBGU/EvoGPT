@@ -1,5 +1,5 @@
 Your unit test has encountered an error:
 
-{error_message}
+{}
 
 Modify your test code to fix it
