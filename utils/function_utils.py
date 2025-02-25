@@ -225,6 +225,7 @@ def extract_project_name(path: str):
 def merge_java_unit_tests(java_test_1, java_test_2):
     """
     Merges two Java unit test class strings, considering imports, class-level variables, and test methods.
+    If a method in java_test_2 has the same name as one in java_test_1, it appends 'Enhanced' to its name.
 
     Parameters:
     - java_test_1 (str): The first Java test class as a string.
@@ -250,11 +251,32 @@ def merge_java_unit_tests(java_test_1, java_test_2):
     merged_fields = sorted(fields_1 | fields_2)
 
     # Extract test methods
-    test_methods_1 = re.findall(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{.*?\}', java_test_1, re.DOTALL)
-    test_methods_2 = re.findall(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{.*?\}', java_test_2, re.DOTALL)
+    test_methods_1 = re.findall(r'@Test\s+public\s+void\s+(\w+)\s*\(.*?\)\s*\{.*?\}', java_test_1, re.DOTALL)
+    test_methods_2 = re.findall(r'@Test\s+public\s+void\s+(\w+)\s*\(.*?\)\s*\{.*?\}', java_test_2, re.DOTALL)
 
-    # Avoid duplicate methods by storing unique ones in a set
-    merged_test_methods = list(set(test_methods_1 + test_methods_2))
+    # Convert test methods from java_test_1 to a set for quick lookup
+    test_method_names_1 = set(test_methods_1)
+
+    # Modify conflicting test method names in java_test_2
+    modified_test_methods_2 = []
+    for method_name in test_methods_2:
+        if method_name in test_method_names_1:
+            new_method_name = method_name + "Enhanced"
+            java_test_2 = re.sub(
+                rf'(@Test\s+public\s+void\s+){method_name}(\s*\(.*?\)\s*\{{)',
+                rf'\1{new_method_name}\2',
+                java_test_2
+            )
+            modified_test_methods_2.append(new_method_name)
+        else:
+            modified_test_methods_2.append(method_name)
+
+    # Extract full test methods again after renaming
+    test_methods_1_full = re.findall(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{.*?\}', java_test_1, re.DOTALL)
+    test_methods_2_full = re.findall(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{.*?\}', java_test_2, re.DOTALL)
+
+    # Merge test methods, avoiding duplicates
+    merged_test_methods = list(set(test_methods_1_full + test_methods_2_full))
     merged_test_methods.sort()  # Sort for consistency
 
     # Construct the merged Java test class
@@ -274,3 +296,4 @@ def merge_java_unit_tests(java_test_1, java_test_2):
     merged_java_test += "}"
 
     return merged_java_test
+
