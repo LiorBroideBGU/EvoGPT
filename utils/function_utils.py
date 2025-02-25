@@ -220,3 +220,57 @@ def extract_project_name(path: str):
             return os.sep.join(path_parts[:benchmarks_index + 2])  # Ensure proper path format
 
     return None
+
+
+def merge_java_unit_tests(java_test_1, java_test_2):
+    """
+    Merges two Java unit test class strings, considering imports, class-level variables, and test methods.
+
+    Parameters:
+    - java_test_1 (str): The first Java test class as a string.
+    - java_test_2 (str): The second Java test class as a string.
+
+    Returns:
+    - str: The merged Java test class.
+    """
+    # Extract imports
+    imports_1 = set(re.findall(r'^import .*?;', java_test_1, re.MULTILINE))
+    imports_2 = set(re.findall(r'^import .*?;', java_test_2, re.MULTILINE))
+    merged_imports = sorted(imports_1 | imports_2)  # Merge and sort imports
+
+    # Extract class name
+    class_match_1 = re.search(r'public\s+class\s+(\w+)', java_test_1)
+    class_match_2 = re.search(r'public\s+class\s+(\w+)', java_test_2)
+    class_name = class_match_1.group(1) if class_match_1 else (
+        class_match_2.group(1) if class_match_2 else "MergedTest")
+
+    # Extract class-level variables (fields)
+    fields_1 = set(re.findall(r'(private|protected|public)?\s+\w+\s+\w+\s*;', java_test_1))
+    fields_2 = set(re.findall(r'(private|protected|public)?\s+\w+\s+\w+\s*;', java_test_2))
+    merged_fields = sorted(fields_1 | fields_2)
+
+    # Extract test methods
+    test_methods_1 = re.findall(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{.*?\}', java_test_1, re.DOTALL)
+    test_methods_2 = re.findall(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{.*?\}', java_test_2, re.DOTALL)
+
+    # Avoid duplicate methods by storing unique ones in a set
+    merged_test_methods = list(set(test_methods_1 + test_methods_2))
+    merged_test_methods.sort()  # Sort for consistency
+
+    # Construct the merged Java test class
+    merged_java_test = "\n".join(merged_imports) + "\n\n"
+    merged_java_test += f"public class {class_name} {{\n\n"
+
+    # Add merged fields
+    for field in merged_fields:
+        merged_java_test += f"    {field}\n"
+
+    merged_java_test += "\n"
+
+    # Add merged test methods
+    for method in merged_test_methods:
+        merged_java_test += f"    {method}\n\n"
+
+    merged_java_test += "}"
+
+    return merged_java_test
