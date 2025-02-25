@@ -166,7 +166,6 @@ class JavaCodeCoverage:
                         line_coverage = 0
 
                     coverage_results[class_name][method_name] = {
-                        "line_number": line_number,
                         "branch_coverage": branch_coverage,
                         "line_coverage": line_coverage,
                     }
