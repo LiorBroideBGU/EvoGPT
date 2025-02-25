@@ -1,6 +1,5 @@
 from llm_agents.llm_agent import LLMAgent
-from langchain.schema import SystemMessage, HumanMessage
-import os
+from langchain.schema import SystemMessage
 from utils.function_utils import *
 from utils.java_executor import *
 
@@ -39,10 +38,10 @@ class UnitTestGenerator(LLMAgent):
         java_class_name = java_file_path.split("\\")[-1].split(".")[0]
         self.update_long_term_memory('session1',self.input_prompt.format(java_code))
         current_test_suite = self.get_unit_test_for_class(session_id='session1')
-        test_file_path = os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name, f"{java_class_name}Test.java"))
+        test_file_path = os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,'javafiles', f"{java_class_name}Test.java"))
         os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
         save_test_suite(current_test_suite, test_file_path)
-        save_test_suite(java_code, os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name, f"{java_class_name}.java")))
+        save_test_suite(java_code, os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,'javafiles', f"{java_class_name}.java")))
 
         ## Generation repair loop
         success, output = False, None
@@ -52,7 +51,7 @@ class UnitTestGenerator(LLMAgent):
                 executor.check_java_code_syntax()
             except SyntaxError as e:
                 success, output = False, e
-                self.update_long_term_memory(self.syntax_error_prompt.format(output))
+                self.update_long_term_memory('session1',self.syntax_error_prompt.format(output))
                 current_test_suite = self.get_unit_test_for_class(session_id='session1')
 
             success, output = executor.compile_java()

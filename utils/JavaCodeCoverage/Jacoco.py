@@ -124,48 +124,66 @@ class JavaCodeCoverage:
 
         return True
 
-
-    def parse_coverage(self, xml_file):
+    def parse_jacoco_xml(self,xml_file):
+        java_source_code = open(os.path.join(self.java_files_dir, f"{self.test_class}.java")).read()
         tree = ET.parse(xml_file)
         root = tree.getroot()
 
-        # Initialize a dictionary to hold the coverage data
-        coverage_data = {}
+        coverage_results = {}
+        missed_branches = {}
 
-        # Iterate over each class in the XML
-        for class_elem in root.findall(".//class"):
-            class_name = class_elem.get("name")
+        for package in root.findall("package"):
+            for class_element in package.findall("class"):
+                class_name = class_element.get("name")
+                # Skip classes with "Test" in the name (assuming they're test files)
+                if "Test" in class_name:
+                    continue
 
-            # Iterate over methods in the class
-            for method_elem in class_elem.findall("method"):
-                method_name = method_elem.get("name")
-                method_line = method_elem.get("line")
+                coverage_results[class_name] = {}
 
-                # Get the coverage counters for the method
-                line_coverage = {}
-                branch_coverage = {}
-                missed_branches = []
+                for method in class_element.findall("method"):
+                    method_name = method.get("name")
+                    line_number = int(method.get("line", "-1"))
 
-                # For each counter type in the method
-                for counter_elem in method_elem.findall("counter"):
-                    counter_type = counter_elem.get("type")
-                    missed = int(counter_elem.get("missed"))
-                    covered = int(counter_elem.get("covered"))
+                    # Extract branch and line counters
+                    branch_counter = method.find("counter[@type='BRANCH']")
+                    line_counter = method.find("counter[@type='LINE']")
 
-                    # Collect line and branch coverage data
-                    if counter_type == "LINE":
-                        line_coverage = {"missed": missed, "covered": covered}
-                    elif counter_type == "BRANCH":
-                        branch_coverage = {"missed": missed, "covered": covered}
-                        # Find missed branches and store them
-                        if missed > 0:
-                            missed_branches.append(method_line)
+                    if branch_counter is not None:
+                        branches_missed = int(branch_counter.get("missed", "0"))
+                        branches_covered = int(branch_counter.get("covered", "0"))
+                        total_branches = branches_missed + branches_covered
+                        branch_coverage = (branches_covered / total_branches) * 100 if total_branches > 0 else 100
+                    else:
+                        branch_coverage = 0
 
-                # Store the coverage data for the method
-                coverage_data[f"{class_name}.{method_name}"] = {
-                    "line_coverage": line_coverage,
-                    "branch_coverage": branch_coverage,
-                    "missed_branches": missed_branches
-                }
+                    if line_counter is not None:
+                        lines_missed = int(line_counter.get("missed", "0"))
+                        lines_covered = int(line_counter.get("covered", "0"))
+                        total_lines = lines_missed + lines_covered
+                        line_coverage = (lines_covered / total_lines) * 100 if total_lines > 0 else 0
+                    else:
+                        line_coverage = 0
 
-        return coverage_data
+                    coverage_results[class_name][method_name] = {
+                        "line_number": line_number,
+                        "branch_coverage": branch_coverage,
+                        "line_coverage": line_coverage,
+                    }
+
+            # Find missed branches from the source file (mb > 0)
+            for source_file in package.findall("sourcefile"):
+                for line in source_file.findall("line"):
+                    line_number = int(line.get("nr"))
+                    missed_branches_count = int(line.get("mb", "0"))
+                    if missed_branches_count > 0:
+                        missed_branches[line_number] = missed_branches_count
+
+        # Retrieve exact lines of Java code for missed branches
+        java_lines = java_source_code.split("\n")
+        missed_branch_lines = {
+            line_number: java_lines[line_number - 1].strip()
+            for line_number in missed_branches if line_number <= len(java_lines)
+        }
+
+        return coverage_results, missed_branch_lines
