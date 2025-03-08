@@ -35,7 +35,8 @@ class JavaExecutor:
         try:
             source_code_name = self.java_file_name.replace("Test", "")
             build_path = os.path.join(os.path.dirname(self.java_file_path))
-            output_dir = f"{build_path}\\{source_code_name}"
+            build_path = os.path.dirname(build_path)
+            output_dir = f"{build_path}\\classfiles"
             result = subprocess.run(
                 ["javac", "-cp", self.classpath, self.java_file_path, '-d',output_dir],
                 capture_output=True,
@@ -63,7 +64,8 @@ class JavaExecutor:
             # Compile the Java file
             source_code_name = self.java_file_name.replace("Test", "")
             build_path = os.path.join(os.path.dirname(self.java_file_path))
-            output_dir = f"{build_path}\\{source_code_name}"
+            build_path = os.path.dirname(build_path)
+            output_dir = f"{build_path}\\classfiles"
             os.makedirs(output_dir, exist_ok=True)
             compile_result = subprocess.run(
                 [

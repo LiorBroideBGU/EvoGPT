@@ -5,12 +5,13 @@ I will provide the following information of the focal method:
 You are required to:
 1. Cover as many branches as possible in the "focal method" (Branch Coverage).
 2. Write the meaningful assertions.
-3. Do not expect specific exceptions in test cases. Instead:
+3. If you suspect a section of the code to contain bugs, write a meaningful assertion\whole test to catch it.
+4. Do not expect specific exceptions in test cases. Instead:
     * Wrap all test logic in a try-catch block.
     * If any exception is thrown, the test should print the error stacktrace, and also throw the error.
-4. Include all necessary import statements at the beginning.
-5. Ensure the test compiles without errors.
-6. Use reflection to invoke private methods if necessary.
-7. Output the unit test code without markdown formatting (```java).
+5. Include all necessary import statements at the beginning.
+6. Ensure the test compiles without errors.
+7. Use reflection to invoke private methods if necessary.
+8. Output the unit test code without markdown formatting (```java).
 No additional explanations required.
 

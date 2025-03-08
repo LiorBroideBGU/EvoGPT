@@ -222,6 +222,8 @@ def extract_project_name(path: str):
     return None
 
 
+import re
+
 def merge_java_unit_tests(java_test_1, java_test_2):
     """
     Merges two Java unit test class strings, considering imports, class-level variables, and test methods.
@@ -250,33 +252,47 @@ def merge_java_unit_tests(java_test_1, java_test_2):
     fields_2 = set(re.findall(r'(private|protected|public)?\s+\w+\s+\w+\s*;', java_test_2))
     merged_fields = sorted(fields_1 | fields_2)
 
-    # Extract test methods
-    test_methods_1 = re.findall(r'@Test\s+public\s+void\s+(\w+)\s*\(.*?\)\s*\{.*?\}', java_test_1, re.DOTALL)
-    test_methods_2 = re.findall(r'@Test\s+public\s+void\s+(\w+)\s*\(.*?\)\s*\{.*?\}', java_test_2, re.DOTALL)
+    # Function to extract full Java methods, handling nested brackets
+    def extract_test_methods(java_code):
+        method_pattern = re.compile(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{', re.MULTILINE)
+        methods = []
+        for match in method_pattern.finditer(java_code):
+            start = match.start()
+            open_braces = 0
+            end = start
+            for i in range(start, len(java_code)):
+                if java_code[i] == '{':
+                    open_braces += 1
+                elif java_code[i] == '}':
+                    open_braces -= 1
+                    if open_braces == 0:
+                        end = i + 1
+                        break
+            methods.append(java_code[start:end])
+        return methods
 
-    # Convert test methods from java_test_1 to a set for quick lookup
-    test_method_names_1 = set(test_methods_1)
+    # Extract test methods properly with full bodies
+    test_methods_1_full = extract_test_methods(java_test_1)
+    test_methods_2_full = extract_test_methods(java_test_2)
 
-    # Modify conflicting test method names in java_test_2
-    modified_test_methods_2 = []
-    for method_name in test_methods_2:
-        if method_name in test_method_names_1:
-            new_method_name = method_name + "Enhanced"
-            java_test_2 = re.sub(
-                rf'(@Test\s+public\s+void\s+){method_name}(\s*\(.*?\)\s*\{{)',
-                rf'\1{new_method_name}\2',
-                java_test_2
-            )
-            modified_test_methods_2.append(new_method_name)
-        else:
-            modified_test_methods_2.append(method_name)
+    # Extract method names
+    test_method_names_1 = set(re.findall(r'@Test\s+public\s+void\s+(\w+)\s*\(', java_test_1))
+    test_methods_2_dict = {}
 
-    # Extract full test methods again after renaming
-    test_methods_1_full = re.findall(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{.*?\}', java_test_1, re.DOTALL)
-    test_methods_2_full = re.findall(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{.*?\}', java_test_2, re.DOTALL)
+    for method in test_methods_2_full:
+        method_name_match = re.search(r'@Test\s+public\s+void\s+(\w+)\s*\(', method)
+        if method_name_match:
+            method_name = method_name_match.group(1)
+            if method_name in test_method_names_1:
+                # Rename conflicting test methods
+                new_method_name = method_name + "Enhanced"
+                method = re.sub(rf'(@Test\s+public\s+void\s+){method_name}(\s*\()', rf'\1{new_method_name}\2', method)
+                test_methods_2_dict[new_method_name] = method
+            else:
+                test_methods_2_dict[method_name] = method
 
     # Merge test methods, avoiding duplicates
-    merged_test_methods = list(set(test_methods_1_full + test_methods_2_full))
+    merged_test_methods = list(set(test_methods_1_full + list(test_methods_2_dict.values())))
     merged_test_methods.sort()  # Sort for consistency
 
     # Construct the merged Java test class
@@ -296,4 +312,28 @@ def merge_java_unit_tests(java_test_1, java_test_2):
     merged_java_test += "}"
 
     return merged_java_test
+
+
+
+def delete_file(file_path):
+    """
+    Deletes the file at the given file path.
+
+    Parameters:
+    - file_path (str): The path of the file to be deleted.
+
+    Returns:
+    - bool: True if the file was deleted successfully, False if the file does not exist.
+    """
+    try:
+        if os.path.isfile(file_path):  # Check if the file exists
+            os.remove(file_path)  # Delete the file
+            print(f"File '{file_path}' deleted successfully.")
+            return True
+        else:
+            print(f"File '{file_path}' does not exist.")
+            return False
+    except Exception as e:
+        print(f"Error deleting file '{file_path}': {e}")
+        return False
 
