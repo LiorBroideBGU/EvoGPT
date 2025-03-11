@@ -1,10 +1,13 @@
 import os
 import subprocess
 import javalang
+from config.config import JAVA_BIN, JAVAC_BIN
 
 class JavaExecutor:
     def __init__(self, java_file_path):
         self.java_file_path = java_file_path
+        self.javac_bin = JAVAC_BIN
+        self.java_bin = JAVA_BIN
 
         self.classpath = os.path.abspath(os.path.join("lib", "jars"))
         jar_files = [f for f in os.listdir(self.classpath) if f.endswith('.jar')]
@@ -37,8 +40,16 @@ class JavaExecutor:
             build_path = os.path.join(os.path.dirname(self.java_file_path))
             build_path = os.path.dirname(build_path)
             output_dir = f"{build_path}\\classfiles"
+            os.makedirs(output_dir, exist_ok=True)
             result = subprocess.run(
-                ["javac", "-cp", self.classpath, self.java_file_path, '-d',output_dir],
+                [
+                    self.javac_bin,  # Explicitly use Java 8's `javac`
+                    "-source", "1.8",
+                    "-target", "1.8",
+                    "-cp", self.classpath,
+                    "-d", output_dir,
+                    self.java_file_path
+                ],
                 capture_output=True,
                 text=True
             )
@@ -69,7 +80,9 @@ class JavaExecutor:
             os.makedirs(output_dir, exist_ok=True)
             compile_result = subprocess.run(
                 [
-                    "javac",
+                    self.javac_bin,  # Explicitly use Java 8's `javac`
+                    "-source", "1.8",
+                    "-target", "1.8",
                     "-cp", self.classpath,
                     "-d", output_dir,
                     self.java_file_path
@@ -85,7 +98,7 @@ class JavaExecutor:
             # Run the compiled tests
             result = subprocess.run(
                 [
-                    "java",
+                    self.java_bin,
                     "-cp", f"{output_dir}{os.pathsep}{self.classpath}",
                     "org.junit.runner.JUnitCore",
                     self.java_file_name
