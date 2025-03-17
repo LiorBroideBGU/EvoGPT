@@ -43,12 +43,13 @@ class JavaExecutor:
             os.makedirs(output_dir, exist_ok=True)
             result = subprocess.run(
                 [
-                    self.javac_bin,  # Explicitly use Java 8's `javac`
-                    "-source", "1.8",
-                    "-target", "1.8",
+                    "javac",  # Explicitly use Java 8's `javac`
+                    # "-source", "1.8",
+                    # "-target", "1.8",
                     "-cp", self.classpath,
+                    self.java_file_path,
                     "-d", output_dir,
-                    self.java_file_path
+
                 ],
                 capture_output=True,
                 text=True
@@ -80,9 +81,9 @@ class JavaExecutor:
             os.makedirs(output_dir, exist_ok=True)
             compile_result = subprocess.run(
                 [
-                    self.javac_bin,  # Explicitly use Java 8's `javac`
-                    "-source", "1.8",
-                    "-target", "1.8",
+                    "javac",  # Explicitly use Java 8's `javac`
+                    # "-source", "1.8",
+                    # "-target", "1.8",
                     "-cp", self.classpath,
                     "-d", output_dir,
                     self.java_file_path
@@ -98,7 +99,7 @@ class JavaExecutor:
             # Run the compiled tests
             result = subprocess.run(
                 [
-                    self.java_bin,
+                    "java",
                     "-cp", f"{output_dir}{os.pathsep}{self.classpath}",
                     "org.junit.runner.JUnitCore",
                     self.java_file_name

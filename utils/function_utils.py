@@ -337,3 +337,29 @@ def delete_file(file_path):
         print(f"Error deleting file '{file_path}': {e}")
         return False
 
+
+def extract_public_methods(java_code: str):
+    """
+    Extracts public method names from the given Java code.
+    :param java_code: str, Java source code
+    :return: list of public method names
+    """
+    method_pattern = re.compile(r'public\s+(?:static\s+)?(?:\w+[<>\[\]]*\s+)?(\w+)\s*\([^)]*\)')
+    methods = method_pattern.findall(java_code)
+
+    # Filter out constructor names (which match the class name)
+    class_pattern = re.compile(r'class\s+(\w+)')
+    class_names = class_pattern.findall(java_code)
+
+    return [method for method in methods if method not in class_names]
+
+
+def extract_function_by_name(java_code: str, function_name: str):
+    """
+    Extracts the full function definition from the given Java code.
+    :param java_code: str, Java source code
+    :param function_name: str, The name of the function to extract
+    :return: str, The extracted function definition
+    """
+    #TODO
+
