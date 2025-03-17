@@ -1,14 +1,10 @@
 import os
 import subprocess
 import javalang
-from config.config import JAVA_BIN, JAVAC_BIN
 
 class JavaExecutor:
     def __init__(self, java_file_path):
         self.java_file_path = java_file_path
-        self.javac_bin = JAVAC_BIN
-        self.java_bin = JAVA_BIN
-
         self.classpath = os.path.abspath(os.path.join("lib", "jars"))
         jar_files = [f for f in os.listdir(self.classpath) if f.endswith('.jar')]
 

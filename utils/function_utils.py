@@ -354,12 +354,40 @@ def extract_public_methods(java_code: str):
     return [method for method in methods if method not in class_names]
 
 
-def extract_function_by_name(java_code: str, function_name: str):
-    """
-    Extracts the full function definition from the given Java code.
-    :param java_code: str, Java source code
-    :param function_name: str, The name of the function to extract
-    :return: str, The extracted function definition
-    """
-    #TODO
+def extract_java_function(java_code: str, function_name: str) -> str:
+    # Match function definitions including annotations
+    pattern = re.compile(
+        rf"""
+        (?:@\w+\s*)*  # Match optional annotations
+        (?:public|protected|private|static|final|synchronized|abstract|native|transient|volatile|strictfp)?\s*
+        [\w<>,\[\] ]+  # Return type (handles generics and arrays)
+        \s+
+        {function_name}\s*\(.*?\)  # Function name and parameters
+        \s*\{{  # Function opening bracket
+        """,
+        re.VERBOSE | re.DOTALL
+    )
+
+    match = pattern.search(java_code)
+    if not match:
+        return ""
+
+    start_index = match.start()
+
+    # Extract the function block ensuring correct bracket matching
+    bracket_count = 0
+    end_index = start_index
+    while end_index < len(java_code):
+        if java_code[end_index] == '{':
+            bracket_count += 1
+        elif java_code[end_index] == '}':
+            bracket_count -= 1
+            if bracket_count == 0:
+                break
+        end_index += 1
+
+    return java_code[start_index:end_index + 1]
+
+
+
 
