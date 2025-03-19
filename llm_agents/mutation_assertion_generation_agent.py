@@ -67,6 +67,7 @@ class MutationAssertionGenerator(LLMAgent):
         self.mutation_mapping = MUTATION_MAPPING
 
 
+
     def get_assertion_injection(self, session_id: str) -> str:
         # Retrieve long-term memory specific to the session
         long_term_memory = self.get_long_term_memory(session_id)
@@ -130,8 +131,19 @@ class MutationAssertionGenerator(LLMAgent):
         for function_name in source_code_functions:
             function = extract_java_function(source_code, function_name)
             mutated_function, applied_mutation = self.apply_mutation(function)
-            original_function = extract_java_function(source_code, function)
-            self.update_long_term_memory('session1',
-                                         self.input_prompt.format(function, mutated_function,unit_test))
-            unit_test = self.get_assertion_injection('session1')
+            modified_source_code = replace_java_function(source_code, function_name, mutated_function)
+            save_test_suite(modified_source_code, self.source_code_path)
+            executor = JavaExecutor(java_file_path=self.source_code_path)
+            executor.compile_java()
+            test_ran, output = self.unit_test_java_executor.run_java()
+            while test_ran and applied_mutation:
+                print(applied_mutation)
+                self.update_long_term_memory('session1',
+                                             self.input_prompt.format(function, mutated_function,unit_test))
+                modified_test = self.get_assertion_injection('session1')
+                test_name = extract_public_methods(modified_test)[0]
+                modified_unit_test = replace_java_function(unit_test,test_name,modified_test)
+                save_test_suite(modified_unit_test, self.unit_test_path)
+                test_ran, output = self.unit_test_java_executor.run_java()
+            save_test_suite(source_code, self.source_code_path)
 

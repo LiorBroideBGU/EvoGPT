@@ -1,6 +1,7 @@
 import os
 import subprocess
 import javalang
+from config.config import JAVA_BIN, JAVAC_BIN
 
 class JavaExecutor:
     def __init__(self, java_file_path):
@@ -39,7 +40,7 @@ class JavaExecutor:
             os.makedirs(output_dir, exist_ok=True)
             result = subprocess.run(
                 [
-                    "javac",  # Explicitly use Java 8's `javac`
+                    JAVAC_BIN,  # Explicitly use Java 8's `javac`
                     # "-source", "1.8",
                     # "-target", "1.8",
                     "-cp", self.classpath,
@@ -77,9 +78,7 @@ class JavaExecutor:
             os.makedirs(output_dir, exist_ok=True)
             compile_result = subprocess.run(
                 [
-                    "javac",  # Explicitly use Java 8's `javac`
-                    # "-source", "1.8",
-                    # "-target", "1.8",
+                    JAVAC_BIN,
                     "-cp", self.classpath,
                     "-d", output_dir,
                     self.java_file_path
@@ -95,7 +94,7 @@ class JavaExecutor:
             # Run the compiled tests
             result = subprocess.run(
                 [
-                    "java",
+                    JAVA_BIN,
                     "-cp", f"{output_dir}{os.pathsep}{self.classpath}",
                     "org.junit.runner.JUnitCore",
                     self.java_file_name

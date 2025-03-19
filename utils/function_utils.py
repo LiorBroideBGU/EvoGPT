@@ -340,30 +340,61 @@ def delete_file(file_path):
 
 def extract_public_methods(java_code: str):
     """
-    Extracts public method names from the given Java code.
+    Extracts public method signatures from the given Java code, excluding return types.
+
     :param java_code: str, Java source code
-    :return: list of public method names
+    :return: list of public method signatures (excluding return types)
     """
-    method_pattern = re.compile(r'public\s+(?:static\s+)?(?:\w+[<>\[\]]*\s+)?(\w+)\s*\([^)]*\)')
+    method_pattern = re.compile(
+        r'public\s+(?:static\s+)?'  # Match "public" and optional "static"
+        r'[\w<>,\[\]]+\s+'  # Return type (optional for constructors)
+        r'(\w+)\s*'  # Method name
+        r'\(([^)]*)\)'  # Parameters inside parentheses
+    )
+
     methods = method_pattern.findall(java_code)
 
-    # Filter out constructor names (which match the class name)
+    # Extract class names to filter out constructors
     class_pattern = re.compile(r'class\s+(\w+)')
     class_names = class_pattern.findall(java_code)
 
-    return [method for method in methods if method not in class_names]
+    # Build method signatures without return types
+    method_signatures = []
+    for match in methods:
+        method_name, params = match  # Unpack correctly
+
+        # Remove return type for constructors
+        signature = f"{method_name}({params})"
+        method_signatures.append(signature.strip())
+
+    return method_signatures
 
 
-def extract_java_function(java_code: str, function_name: str) -> str:
-    # Match function definitions including annotations
+def extract_java_function(java_code: str, function_signature: str) -> str:
+    """
+    Extracts the full definition of a Java function, including annotations and ensuring
+    all curly brackets are correctly matched.
+
+    Args:
+        java_code (str): The full Java source code.
+        function_signature (str): The full function signature including parameter types, e.g., "add(Boolean bool)".
+
+    Returns:
+        str: The extracted function definition including annotations.
+    """
+    # Extract function name and parameters separately
+    function_name, param_list = function_signature.split("(", 1)
+    param_list = param_list.rstrip(")")  # Remove trailing parenthesis
+
+    # Construct regex for function matching
     pattern = re.compile(
         rf"""
         (?:@\w+\s*)*  # Match optional annotations
         (?:public|protected|private|static|final|synchronized|abstract|native|transient|volatile|strictfp)?\s*
-        [\w<>,\[\] ]+  # Return type (handles generics and arrays)
-        \s+
-        {function_name}\s*\(.*?\)  # Function name and parameters
-        \s*\{{  # Function opening bracket
+        [\w<>,\[\] ]+\s+  # Return type (handles generics and arrays)
+        {re.escape(function_name)}\s*  # Match function name
+        \(\s*{re.escape(param_list)}\s*\)  # Match exact parameters inside parentheses
+        \s*\{{  # Match function opening bracket
         """,
         re.VERBOSE | re.DOTALL
     )
@@ -389,5 +420,56 @@ def extract_java_function(java_code: str, function_name: str) -> str:
     return java_code[start_index:end_index + 1]
 
 
+def replace_java_function(java_code: str, function_name: str, modified_function: str) -> str:
+    """
+    Replaces a given function definition in the Java source code with a modified version.
+
+    Args:
+        java_code (str): The full Java source code.
+        function_name (str): The name of the function to be replaced (e.g., "add(Boolean bool)").
+        modified_function (str): The new function definition to replace the existing one.
+
+    Returns:
+        str: The updated Java source code with the function replaced.
+    """
+    # Extract function name and parameters separately
+    function_base, param_list = function_name.split("(", 1)
+    param_list = param_list.rstrip(")")  # Remove trailing parenthesis
+
+    # Construct regex for function matching
+    pattern = re.compile(
+        rf"""
+        (?:@\w+\s*)*  # Match optional annotations
+        (?:public|protected|private|static|final|synchronized|abstract|native|transient|volatile|strictfp)?\s*
+        [\w<>,\[\] ]+\s+  # Return type (handles generics and arrays)
+        {re.escape(function_base)}\s*  # Match function name
+        \(\s*{re.escape(param_list)}\s*\)  # Match exact parameters inside parentheses
+        \s*\{{  # Match function opening bracket
+        """,
+        re.VERBOSE | re.DOTALL
+    )
+
+    match = pattern.search(java_code)
+    if not match:
+        return java_code  # Return unchanged if function is not found
+
+    start_index = match.start()
+
+    # Extract the function block ensuring correct bracket matching
+    bracket_count = 0
+    end_index = start_index
+    while end_index < len(java_code):
+        if java_code[end_index] == '{':
+            bracket_count += 1
+        elif java_code[end_index] == '}':
+            bracket_count -= 1
+            if bracket_count == 0:
+                break
+        end_index += 1
+
+    # Replace the old function with the new modified function
+    updated_code = java_code[:start_index] + modified_function + java_code[end_index + 1:]
+
+    return updated_code
 
 

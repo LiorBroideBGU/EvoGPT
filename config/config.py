@@ -3,5 +3,5 @@ API_KEY = 'sk-proj-qKj4M2IvNXBNqmBBlLYwoxP8Ohw7CnGaDhDC78MomY14zD8J26crygZRfa6na
 TEMPERATURE = 0.5
 MODEL = 'gpt-4o-mini'
 PROJECT = '<PROJECT>'
-JAVAC_BIN = r"C:\Program Files\Java\jdk1.8.0_202\bin\javac.exe"
-JAVA_BIN = r"C:\Program Files\Java\jdk1.8.0_202\bin\java.exe"
+JAVAC_BIN = r"C:\Program Files\Java\jdk-23\bin\javac.exe"
+JAVA_BIN = r"C:\Program Files\Java\jdk-23\bin\java.exe"
