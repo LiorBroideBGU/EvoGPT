@@ -12,14 +12,14 @@ class CoverageEnhancementAgent(UnitTestGenerator):
         self.syntax_error_prompt = open(os.path.abspath(os.path.join("prompts", "coverage_enhancement_generator", "syntax_error_prompt.txt")),'r').read()
         self.java_file_path = java_file_path
 
-    def generation_repair_loop(self,coverage_metrics, missed_branches, iterations=4):
+    def generation_repair_loop(self,coverage_metrics, missed_branches, iterations=4, thread_number=None):
         java_code = read_java_file_as_string(self.java_file_path)
         java_code = clean_java_code(java_code)
         project_id = extract_project_name(self.java_file_path).split("\\")[-1]
         java_class_name = self.java_file_path.split("\\")[-1].split(".")[0]
         self.update_long_term_memory('session1',self.input_prompt.format(java_code, coverage_metrics, missed_branches))
         current_test_suite = self.get_unit_test_for_class(session_id='session1')
-        test_file_path = os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,'javafiles', f"{java_class_name}EnhancedTest.java"))
+        test_file_path = os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,str(thread_number),'javafiles', f"{java_class_name}EnhancedTest.java")) if thread_number else os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,'javafiles', f"{java_class_name}EnhancedTest.java"))
         os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
         save_test_suite(current_test_suite, test_file_path)
 

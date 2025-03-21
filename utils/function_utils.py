@@ -3,6 +3,7 @@ from typing import List
 import os
 import re
 import javalang
+import shutil
 
 def unzip_dataset(dataset_name: str, target_path: str, dataset_path: str):
     """
@@ -330,6 +331,9 @@ def delete_file(file_path):
             os.remove(file_path)  # Delete the file
             print(f"File '{file_path}' deleted successfully.")
             return True
+        elif os.path.isdir(file_path):
+            shutil.rmtree(file_path)
+            print(f"Directory '{file_path}' deleted successfully.")
         else:
             print(f"File '{file_path}' does not exist.")
             return False

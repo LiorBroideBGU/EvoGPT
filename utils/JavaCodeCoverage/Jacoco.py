@@ -1,10 +1,10 @@
 import subprocess
 import os
 import xml.etree.ElementTree as ET
-
+from config.config import JAVA_BIN, JAVAC_BIN
 
 class JavaCodeCoverage:
-    def __init__(self, java_files_dir, test_class, project_name):
+    def __init__(self, java_files_dir, test_class, project_name, thread_id=None):
         """
         Initializes the JavaCodeCoverage class.
 
@@ -16,7 +16,7 @@ class JavaCodeCoverage:
         self.test_class = test_class  # Name of your test class (e.g., JsonParserTest)
         self.project_name = project_name  # Project name (e.g., gson)
         self.classpath = os.path.abspath(os.path.join("lib", "jars"))
-
+        self.thread_id = thread_id
         # Collect all .jar files in the lib/jars directory to form the classpath
         jar_files = [f for f in os.listdir(self.classpath) if f.endswith('.jar')]
         self.classpath_combined = os.pathsep.join([os.path.join(self.classpath, jar) for jar in jar_files])
@@ -31,7 +31,7 @@ class JavaCodeCoverage:
         try:
             subprocess.run(
                 [
-                    "javac",
+                    JAVAC_BIN,
                     "-cp", self.classpath_combined,  # Include all jars in the classpath
                     "-d", output_dir,  # Output directory for .class files
                     os.path.join(self.java_files_dir, f"{self.test_class}Test.java"),  # Test class
@@ -61,7 +61,7 @@ class JavaCodeCoverage:
         try:
             subprocess.run(
                 [
-                    "java",
+                    JAVA_BIN,
                     "-javaagent:" + jacoco_agent + f"=destfile={coverage_file}",  # JaCoCo agent argument
                     "-cp", f"{output_dir}{os.pathsep}{self.classpath_combined}",
                     "org.junit.runner.JUnitCore",  # Run the JUnit tests
@@ -89,10 +89,10 @@ class JavaCodeCoverage:
                     "java", "-jar", os.path.abspath(os.path.join('lib', 'jars', 'jacococli.jar')),
                     "report", os.path.join(output_dir, "coverage.exec"),  # .exec file to report on
                     "--classfiles",
-                    os.path.join("results", "unit_tests", self.project_name, self.test_class, "classfiles"),
+                    os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles"),
                     # Path to class files (compiled files)
                     "--sourcefiles",
-                    os.path.join("results", "unit_tests", self.project_name, self.test_class, "javafiles"),
+                    os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "javafiles"),
                     # Path to the source files
                     "--xml", os.path.join(output_dir, "coverage.xml")  # Output in XML format
                 ],
@@ -107,7 +107,7 @@ class JavaCodeCoverage:
         Generates the coverage report by compiling, running tests with JaCoCo,
         and converting the .exec file to an XML report.
         """
-        build_dir = os.path.join("results", "unit_tests", self.project_name, self.test_class, "classfiles")
+        build_dir = os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles")
         os.makedirs(build_dir, exist_ok=True)
 
         # Step 1: Compile the Java files
@@ -148,15 +148,6 @@ class JavaCodeCoverage:
                     # Extract branch and line counters
                     branch_counter = method.find("counter[@type='BRANCH']")
                     line_counter = method.find("counter[@type='LINE']")
-
-                    if branch_counter is not None:
-                        branches_missed = int(branch_counter.get("missed", "0"))
-                        branches_covered = int(branch_counter.get("covered", "0"))
-                        total_branches = branches_missed + branches_covered
-                        branch_coverage = (branches_covered / total_branches) * 100 if total_branches > 0 else 100
-                    else:
-                        branch_coverage = 0
-
                     if line_counter is not None:
                         lines_missed = int(line_counter.get("missed", "0"))
                         lines_covered = int(line_counter.get("covered", "0"))
@@ -164,6 +155,14 @@ class JavaCodeCoverage:
                         line_coverage = (lines_covered / total_lines) * 100 if total_lines > 0 else 0
                     else:
                         line_coverage = 0
+                    if branch_counter is not None:
+                        branches_missed = int(branch_counter.get("missed", "0"))
+                        branches_covered = int(branch_counter.get("covered", "0"))
+                        total_branches = branches_missed + branches_covered
+                        branch_coverage = (branches_covered / total_branches) * 100 if total_branches > 0 else 100
+                    else:
+                        branch_coverage = 100 if line_coverage > 0 else 0
+
 
                     coverage_results[class_name][method_name] = {
                         "branch_coverage": branch_coverage,
@@ -186,3 +185,51 @@ class JavaCodeCoverage:
         }
 
         return coverage_results, missed_branch_lines
+
+    def get_average_coverage(self, thread_number=None):
+        """
+        Returns a tuple of (average_branch_coverage, average_line_coverage) across all non-test methods.
+        Methods without any branches count as 100% branch coverage.
+        """
+        # Step 1: Generate coverage report
+        success = self.generate_coverage_report()
+        if not success:
+            raise RuntimeError("Coverage report generation failed.")
+
+        # Step 2: Determine XML path
+        xml_path = os.path.join(
+            "results", "unit_tests", self.project_name, self.test_class,
+            str(thread_number),"classfiles", "coverage.xml"
+        )
+        if not os.path.exists(xml_path):
+            raise FileNotFoundError(f"JaCoCo XML not found at: {xml_path}")
+
+        # Step 3: Parse coverage data
+        coverage_data, _ = self.parse_jacoco_xml(xml_path)
+
+        total_branch = 0
+        total_line = 0
+        method_count = 0
+
+        for class_name, methods in coverage_data.items():
+            if "Test" in class_name:
+                continue
+            for method_name, metrics in methods.items():
+                if "test" in method_name.lower():
+                    continue
+
+                # Count methods and accumulate
+                branch_coverage = metrics.get("branch_coverage", 100)
+                line_coverage = metrics.get("line_coverage", 0)
+
+                total_branch += branch_coverage
+                total_line += line_coverage
+                method_count += 1
+
+        if method_count == 0:
+            return 0.0, 0.0  # or raise exception?
+
+        avg_branch = total_branch / method_count
+        avg_line = total_line / method_count
+
+        return avg_branch, avg_line

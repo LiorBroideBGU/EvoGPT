@@ -53,7 +53,6 @@ class JavaExecutor:
             )
 
             if result.returncode != 0:
-                print("Compilation Error:", result.stderr)
                 return False, result.stderr
             print("Java Compilation Successful")
             return True, 'Compilation successful'
@@ -104,7 +103,6 @@ class JavaExecutor:
             )
 
             if result.returncode != 0:
-                print(f"Runtime Error:\n{result.stdout}")
                 return False, result.stdout
 
             return True, result.stdout
