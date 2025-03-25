@@ -38,15 +38,14 @@ class ChromosomesGenerator:
         jcc = JavaCodeCoverage(
             f'C:\\Users\\liorb\\PycharmProjects\\EvoChat\\results\\unit_tests\\{self.project_name}\\{self.class_name}\\{str(thread_number)}\\javafiles',
             'JsonArray',
-            'gson',
+            self.project_name,
             thread_id=thread_number
         )
         jcc.generate_coverage_report()
         coverage_metrics, missed_branches = jcc.parse_jacoco_xml(
             rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\classfiles\coverage.xml'
         )
-        print("CHECK HERE!!!!!")
-        print(coverage_metrics, missed_branches)
+
         # Enhancements
         test_enhancements = CoverageEnhancementAgent(
             api_key=API_KEY,
@@ -162,9 +161,12 @@ class ChromosomesGenerator:
                 else:
                     elites.append(parent1)
                     elites.append(parent2)
+                if time.time() - start_time > max_time:
+                    break
                 iterations += 1
 
-            self.chromosomes = elites + self.chromosomes
+            self.chromosomes = elites
+            elites = []
         return max(self.chromosomes, key=lambda c: c.fitness_score)
 
     def generate_final_unit_test(self,n_chromosomes=30, max_time=180):
@@ -182,8 +184,10 @@ class ChromosomesGenerator:
 
         print("All threads finished.")
 
-        final = chromosomes_generator.evolution_generation(max_time=max_time)
-        print(final)
+        final = self.evolution_generation(max_time=max_time)
+        for chromosome in self.chromosomes:
+            print(chromosome)
+        print(f"BEST CHROMOSOME: {final}")
         #TODO: Delete all unit tests but this one.
 
 if __name__ == '__main__':

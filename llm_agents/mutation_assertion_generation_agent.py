@@ -68,9 +68,23 @@ class MutationAssertionGenerator(LLMAgent):
 
 
 
+    def exact_operator_regex(self,pattern):
+        """
+        Builds a regex pattern that ensures only the exact operator is matched, not a substring of a larger operator.
+        """
+        escaped = re.escape(pattern)
+        if pattern in ["++", "--", "==", "!=", "<=", ">="]:
+            return rf'(?<!\w){escaped}(?!\w)'
+        elif pattern in ["+", "-", "*", "/", "<", ">"]:
+            return rf'(?<![\w{escaped}]){escaped}(?![\w{escaped}=])'
+        elif pattern == "=":
+            return rf'(?<![!=<>]){escaped}(?![=])'
+        elif pattern == "!":
+            return rf'(?<![=!]){escaped}(?![=])'
+        else:
+            return escaped  # fallback
+
     def get_assertion_injection(self, session_id: str) -> str:
-        # Retrieve long-term memory specific to the session
-        long_term_memory = self.get_long_term_memory(session_id)
 
         # Compose the prompt including the system message, long-term memory, and user input
         system_message =SystemMessage(content=f"{self.system_prompt}")
@@ -105,22 +119,14 @@ class MutationAssertionGenerator(LLMAgent):
         # random.shuffle(mutation_keys)  # Ensures random selection
 
         for pattern in mutation_keys:
-            # Ensure correct boundaries for special cases like '=' vs '==', and '!' vs '!='
-            if pattern in ["=", "!"]:
-                regex_pattern = rf"(?<![=!]){re.escape(pattern)}(?![=])"
-            else:
-                regex_pattern = re.escape(pattern)
-
-            if re.search(regex_pattern, mutated_function):  # Check if pattern exists
+            regex_pattern = self.exact_operator_regex(pattern)
+            if re.search(regex_pattern, mutated_function):
                 possible_mutations = self.mutation_mapping[pattern]
-                chosen_mutation = random.choice(possible_mutations)  # Randomly pick a mutation
-
-                # Apply mutation correctly using regex
+                chosen_mutation = random.choice(possible_mutations)
                 mutated_function, num_subs = re.subn(regex_pattern, chosen_mutation, mutated_function, count=1)
-
-                if num_subs > 0:  # Ensure mutation occurred
+                if num_subs > 0:
                     applied_mutation = f"Replaced `{pattern}` with `{chosen_mutation}`"
-                    break  # Apply only one mutation per function
+                    break
 
         return mutated_function, applied_mutation
 
@@ -137,7 +143,6 @@ class MutationAssertionGenerator(LLMAgent):
             executor.compile_java()
             test_ran, output = self.unit_test_java_executor.run_java()
             while test_ran and applied_mutation:
-                print(applied_mutation)
                 self.update_long_term_memory('session1',
                                              self.input_prompt.format(function, mutated_function,unit_test))
                 modified_test = self.get_assertion_injection('session1')

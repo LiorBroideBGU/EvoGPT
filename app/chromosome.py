@@ -160,3 +160,12 @@ class Chromosome:
 
     def __str__(self):
         return f"<Chromosome from {self.path}, Fitness={self.fitness_score}>"
+
+
+    def __hash__(self):
+        return hash(self.test_file_path)
+
+    def __eq__(self, other):
+        if not isinstance(other, Chromosome):
+            return False
+        return self.test_file_path == other.test_file_path
