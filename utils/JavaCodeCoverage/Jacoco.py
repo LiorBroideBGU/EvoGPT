@@ -89,10 +89,10 @@ class JavaCodeCoverage:
                     "java", "-jar", os.path.abspath(os.path.join('lib', 'jars', 'jacococli.jar')),
                     "report", os.path.join(output_dir, "coverage.exec"),  # .exec file to report on
                     "--classfiles",
-                    os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles"),
+                    os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles") if self.thread_id else os.path.join(os.path.dirname(self.java_files_dir), "classfiles"),
                     # Path to class files (compiled files)
                     "--sourcefiles",
-                    os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "javafiles"),
+                    os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "javafiles") if self.thread_id else self.java_files_dir,
                     # Path to the source files
                     "--xml", os.path.join(output_dir, "coverage.xml")  # Output in XML format
                 ],
@@ -107,7 +107,11 @@ class JavaCodeCoverage:
         Generates the coverage report by compiling, running tests with JaCoCo,
         and converting the .exec file to an XML report.
         """
-        build_dir = os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles")
+        if self.thread_id:
+            build_dir = os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles")
+        else:
+            parent_path = os.path.dirname(self.java_files_dir)
+            build_dir  = os.path.join(parent_path, "classfiles")
         os.makedirs(build_dir, exist_ok=True)
 
         # Step 1: Compile the Java files
@@ -197,10 +201,11 @@ class JavaCodeCoverage:
             raise RuntimeError("Coverage report generation failed.")
 
         # Step 2: Determine XML path
+
         xml_path = os.path.join(
             "results", "unit_tests", self.project_name, self.test_class,
             str(thread_number),"classfiles", "coverage.xml"
-        )
+        ) if thread_number else os.path.join(os.path.dirname(self.java_files_dir),"classfiles", "coverage.xml")
         if not os.path.exists(xml_path):
             raise FileNotFoundError(f"JaCoCo XML not found at: {xml_path}")
 

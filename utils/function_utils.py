@@ -5,6 +5,10 @@ import re
 import javalang
 import shutil
 
+from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
+from utils.java_executor import JavaExecutor
+
+
 def unzip_dataset(dataset_name: str, target_path: str, dataset_path: str):
     """
     Unzips the dataset's zip into a directory.
@@ -208,7 +212,10 @@ def save_test_suite(test_suite_code,test_file_path):
         with open(test_file_path, "w", encoding="utf-8") as file:
             file.write(test_suite_code)
     except Exception as e:
-        raise Exception(f"An error occurred: {e}")
+        os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
+        with open(test_file_path, "w", encoding="utf-8") as file:
+            file.write(test_suite_code)
+
 
 
 def extract_project_name(path: str):
@@ -477,3 +484,10 @@ def replace_java_function(java_code: str, function_name: str, modified_function:
     return updated_code
 
 
+def compile_code_from_path(code):
+    """
+    :param code: Path to the java source code.
+    :return:
+    """
+    executor = JavaExecutor(code)
+    executor.compile_java()

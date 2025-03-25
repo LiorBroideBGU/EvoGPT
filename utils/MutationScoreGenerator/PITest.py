@@ -13,7 +13,6 @@ class PITestRunner:
         # Points to pitest-command-line.jar (not included in lib/jars)
         self.pitest_cli_jar = os.path.abspath("utils/MutationScoreGenerator/jars/pitest-command-line-1.19.0.jar")
 
-        # Other jars (including pitest-core, junit, bytebuddy, etc.)
         self.jars_dir = os.path.abspath("lib/jars")
         self.classpath = self._build_classpath()
 
