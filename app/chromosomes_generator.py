@@ -167,6 +167,25 @@ class ChromosomesGenerator:
             self.chromosomes = elites + self.chromosomes
         return max(self.chromosomes, key=lambda c: c.fitness_score)
 
+    def generate_final_unit_test(self,n_chromosomes=30, max_time=180):
+        temperatures = [random.random() for _ in range(n_chromosomes)]
+        threads = []
+
+        for i, temp in enumerate(temperatures):
+            i = i + 1
+            t = threading.Thread(target=self.threaded_generation, args=(i, temp))
+            t.start()
+            threads.append(t)
+
+        for t in threads:
+            t.join()
+
+        print("All threads finished.")
+
+        final = chromosomes_generator.evolution_generation(max_time=max_time)
+        print(final)
+        #TODO: Delete all unit tests but this one.
+
 if __name__ == '__main__':
     temperatures = [0.25]
     threads = []
