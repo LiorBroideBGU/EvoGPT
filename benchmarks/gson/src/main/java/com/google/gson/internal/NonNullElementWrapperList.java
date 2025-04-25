@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2018 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal;
 
@@ -9,7 +23,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.RandomAccess;
 
-
+/**
+ * {@link List} which wraps another {@code List} but prevents insertion of {@code null} elements.
+ * Methods which only perform checks with the element argument (e.g. {@link #contains(Object)}) do
+ * not throw exceptions for {@code null} arguments.
+ */
 public class NonNullElementWrapperList<E> extends AbstractList<E> implements RandomAccess {
   // Explicitly specify ArrayList as type to guarantee that delegate implements RandomAccess
   private final ArrayList<E> delegate;
@@ -51,7 +69,7 @@ public class NonNullElementWrapperList<E> extends AbstractList<E> implements Ran
     return delegate.remove(index);
   }
 
-  
+  /* The following methods are overridden because their default implementation is inefficient */
 
   @Override
   public void clear() {
@@ -109,5 +127,6 @@ public class NonNullElementWrapperList<E> extends AbstractList<E> implements Ran
     return delegate.hashCode();
   }
 
-  // TODO: Once Gson targets Java 8 also override List.sort
+  // Maybe also delegate List#sort and List#spliterator in the future, but that
+  // requires Android API level 24
 }

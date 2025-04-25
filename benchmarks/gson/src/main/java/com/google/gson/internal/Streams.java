@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2010 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal;
 
@@ -17,13 +31,13 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.Objects;
 
-
+/** Reads and writes GSON parse trees over streams. */
 public final class Streams {
   private Streams() {
     throw new UnsupportedOperationException();
   }
 
-  
+  /** Takes a reader in any state and returns the next value as a JsonElement. */
   public static JsonElement parse(JsonReader reader) throws JsonParseException {
     boolean isEmpty = true;
     try {
@@ -31,7 +45,10 @@ public final class Streams {
       isEmpty = false;
       return TypeAdapters.JSON_ELEMENT.read(reader);
     } catch (EOFException e) {
-      
+      /*
+       * For compatibility with JSON 1.5 and earlier, we return a JsonNull for
+       * empty documents instead of throwing.
+       */
       if (isEmpty) {
         return JsonNull.INSTANCE;
       }
@@ -46,7 +63,7 @@ public final class Streams {
     }
   }
 
-  
+  /** Writes the JSON element to the writer, recursively. */
   public static void write(JsonElement element, JsonWriter writer) throws IOException {
     TypeAdapters.JSON_ELEMENT.write(writer, element);
   }
@@ -55,7 +72,7 @@ public final class Streams {
     return appendable instanceof Writer ? (Writer) appendable : new AppendableWriter(appendable);
   }
 
-  
+  /** Adapts an {@link Appendable} so it can be passed anywhere a {@link Writer} is used. */
   private static final class AppendableWriter extends Writer {
     private final Appendable appendable;
     private final CurrentWrite currentWrite = new CurrentWrite();
@@ -104,7 +121,7 @@ public final class Streams {
       return this;
     }
 
-    
+    /** A mutable char sequence pointing at a single char[]. */
     private static class CurrentWrite implements CharSequence {
       private char[] chars;
       private String cachedString;

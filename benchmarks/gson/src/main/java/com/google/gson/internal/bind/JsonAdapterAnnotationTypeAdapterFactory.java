@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2014 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal.bind;
 
@@ -14,7 +28,12 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-
+/**
+ * Given a type T, looks for the annotation {@link JsonAdapter} and uses an instance of the
+ * specified class as the default type adapter.
+ *
+ * @since 2.3
+ */
 public final class JsonAdapterAnnotationTypeAdapterFactory implements TypeAdapterFactory {
   private static class DummyTypeAdapterFactory implements TypeAdapterFactory {
     @Override
@@ -23,17 +42,21 @@ public final class JsonAdapterAnnotationTypeAdapterFactory implements TypeAdapte
     }
   }
 
-  
+  /** Factory used for {@link TreeTypeAdapter}s created for {@code @JsonAdapter} on a class. */
   private static final TypeAdapterFactory TREE_TYPE_CLASS_DUMMY_FACTORY =
       new DummyTypeAdapterFactory();
 
-  
+  /** Factory used for {@link TreeTypeAdapter}s created for {@code @JsonAdapter} on a field. */
   private static final TypeAdapterFactory TREE_TYPE_FIELD_DUMMY_FACTORY =
       new DummyTypeAdapterFactory();
 
   private final ConstructorConstructor constructorConstructor;
 
-  
+  /**
+   * For a class, if it is annotated with {@code @JsonAdapter} and refers to a {@link
+   * TypeAdapterFactory}, stores the factory instance in case it has been requested already. Has to
+   * be a {@link ConcurrentMap} because {@link Gson} guarantees to be thread-safe.
+   */
   // Note: In case these strong reference to TypeAdapterFactory instances are considered
   // a memory leak in the future, could consider switching to WeakReference<TypeAdapterFactory>
   private final ConcurrentMap<Class<?>, TypeAdapterFactory> adapterFactoryMap;
@@ -67,7 +90,10 @@ public final class JsonAdapterAnnotationTypeAdapterFactory implements TypeAdapte
     // TODO: The exception messages created by ConstructorConstructor are currently written in the
     // context of deserialization and for example suggest usage of TypeAdapter, which would not work
     // for @JsonAdapter usage
-    return constructorConstructor.get(TypeToken.get(adapterClass)).construct();
+    // TODO: Should probably not allow usage of Unsafe; instances might be in broken state and
+    // calling adapter methods on them might lead to confusing exceptions
+    boolean allowUnsafe = true;
+    return constructorConstructor.get(TypeToken.get(adapterClass), allowUnsafe).construct();
   }
 
   private TypeAdapterFactory putFactoryAndGetCurrent(Class<?> rawType, TypeAdapterFactory factory) {
@@ -135,7 +161,10 @@ public final class JsonAdapterAnnotationTypeAdapterFactory implements TypeAdapte
     return typeAdapter;
   }
 
-  
+  /**
+   * Returns whether {@code factory} is a type adapter factory created for {@code @JsonAdapter}
+   * placed on {@code type}.
+   */
   public boolean isClassJsonAdapterFactory(TypeToken<?> type, TypeAdapterFactory factory) {
     Objects.requireNonNull(type);
     Objects.requireNonNull(factory);

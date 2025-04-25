@@ -1,4 +1,19 @@
-
+/*
+ * Copyright (C) 2010 The Android Open Source Project
+ * Copyright (C) 2012 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal;
 
@@ -18,7 +33,13 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 
-
+/**
+ * A map of comparable keys to values. Unlike {@code TreeMap}, this class uses insertion order for
+ * iteration order. Comparison order is only used as an optimization for efficient insertion and
+ * removal.
+ *
+ * <p>This implementation was derived from Android 4.1's TreeMap class.
+ */
 @SuppressWarnings("serial") // ignore warning about missing serialVersionUID
 public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Serializable {
   @SuppressWarnings({"unchecked", "rawtypes"}) // to avoid Comparable<Comparable<Comparable<...>>>
@@ -39,19 +60,33 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
   // Used to preserve iteration order
   final Node<K, V> header;
 
-  
+  /**
+   * Create a natural order, empty tree map whose keys must be mutually comparable and non-null, and
+   * whose values can be {@code null}.
+   */
   @SuppressWarnings("unchecked") // unsafe! this assumes K is comparable
   public LinkedTreeMap() {
     this((Comparator<? super K>) NATURAL_ORDER, true);
   }
 
-  
+  /**
+   * Create a natural order, empty tree map whose keys must be mutually comparable and non-null.
+   *
+   * @param allowNullValues whether {@code null} is allowed as entry value
+   */
   @SuppressWarnings("unchecked") // unsafe! this assumes K is comparable
   public LinkedTreeMap(boolean allowNullValues) {
     this((Comparator<? super K>) NATURAL_ORDER, allowNullValues);
   }
 
-  
+  /**
+   * Create a tree map ordered by {@code comparator}. This map's keys may only be null if {@code
+   * comparator} permits.
+   *
+   * @param comparator the comparator to order elements with, or {@code null} to use the natural
+   *     ordering.
+   * @param allowNullValues whether {@code null} is allowed as entry value
+   */
   // unsafe! if comparator is null, this assumes K is comparable
   @SuppressWarnings({"unchecked", "rawtypes"})
   public LinkedTreeMap(Comparator<? super K> comparator, boolean allowNullValues) {
@@ -108,7 +143,11 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
     return node != null ? node.value : null;
   }
 
-  
+  /**
+   * Returns the node at or adjacent to the given key, creating it if requested.
+   *
+   * @throws ClassCastException if {@code key} and the tree's keys aren't mutually comparable.
+   */
   Node<K, V> find(K key, boolean create) {
     Comparator<? super K> comparator = this.comparator;
     Node<K, V> nearest = root;
@@ -180,7 +219,14 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
     }
   }
 
-  
+  /**
+   * Returns this map's entry that has the same key and value as {@code entry}, or null if this map
+   * has no such entry.
+   *
+   * <p>This method uses the comparator for key equality rather than {@code equals}. If this map's
+   * comparator isn't consistent with equals (such as {@code String.CASE_INSENSITIVE_ORDER}), then
+   * {@code remove()} and {@code contains()} will violate the collections API.
+   */
   Node<K, V> findByEntry(Entry<?, ?> entry) {
     Node<K, V> mine = findByObject(entry.getKey());
     boolean valuesEqual = mine != null && equal(mine.value, entry.getValue());
@@ -191,7 +237,11 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
     return Objects.equals(a, b);
   }
 
-  
+  /**
+   * Removes {@code node} from this tree, rearranging the tree's structure as necessary.
+   *
+   * @param unlink true to also unlink this node from the iteration linked list.
+   */
   void removeInternal(Node<K, V> node, boolean unlink) {
     if (unlink) {
       node.prev.next = node.next;
@@ -203,7 +253,14 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
     Node<K, V> originalParent = node.parent;
     if (left != null && right != null) {
 
-      
+      /*
+       * To remove a node with both left and right subtrees, move an
+       * adjacent node from one of those subtrees into this node's place.
+       *
+       * Removing the adjacent node may change this node's subtrees. This
+       * node may no longer have two subtrees once the adjacent node is
+       * gone!
+       */
 
       Node<K, V> adjacent = (left.height > right.height) ? left.last() : right.first();
       removeInternal(adjacent, false); // takes care of rebalance and size--
@@ -272,7 +329,12 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
     }
   }
 
-  
+  /**
+   * Rebalances the tree by making any AVL rotations necessary between the newly-unbalanced node and
+   * the tree's root.
+   *
+   * @param insert true if the node was unbalanced by an insert; false if it was by a removal.
+   */
   private void rebalance(Node<K, V> unbalanced, boolean insert) {
     for (Node<K, V> node = unbalanced; node != null; node = node.parent) {
       Node<K, V> left = node.left;
@@ -333,7 +395,7 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
     }
   }
 
-  
+  /** Rotates the subtree so that its root's right child is the new root. */
   private void rotateLeft(Node<K, V> root) {
     Node<K, V> left = root.left;
     Node<K, V> pivot = root.right;
@@ -358,7 +420,7 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
     pivot.height = Math.max(root.height, pivotRight != null ? pivotRight.height : 0) + 1;
   }
 
-  
+  /** Rotates the subtree so that its root's left child is the new root. */
   private void rotateRight(Node<K, V> root) {
     Node<K, V> pivot = root.left;
     Node<K, V> right = root.right;
@@ -409,14 +471,14 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
     V value;
     int height;
 
-    
+    /** Create the header entry */
     Node(boolean allowNullValue) {
       key = null;
       this.allowNullValue = allowNullValue;
       next = prev = this;
     }
 
-    
+    /** Create a regular entry */
     Node(boolean allowNullValue, Node<K, V> parent, K key, Node<K, V> next, Node<K, V> prev) {
       this.parent = parent;
       this.key = key;
@@ -468,7 +530,7 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
       return key + "=" + value;
     }
 
-    
+    /** Returns the first node in this subtree. */
     public Node<K, V> first() {
       Node<K, V> node = this;
       Node<K, V> child = node.left;
@@ -479,7 +541,7 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
       return node;
     }
 
-    
+    /** Returns the last node in this subtree. */
     public Node<K, V> last() {
       Node<K, V> node = this;
       Node<K, V> child = node.right;
@@ -601,7 +663,11 @@ public final class LinkedTreeMap<K, V> extends AbstractMap<K, V> implements Seri
     }
   }
 
-  
+  /**
+   * If somebody is unlucky enough to have to serialize one of these, serialize it as a
+   * LinkedHashMap so that they won't need Gson on the other side to deserialize it. Using
+   * serialization defeats our DoS defence, so most apps shouldn't use it.
+   */
   private Object writeReplace() throws ObjectStreamException {
     return new LinkedHashMap<>(this);
   }

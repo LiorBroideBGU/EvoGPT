@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2011 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal.bind;
 
@@ -13,7 +27,7 @@ import com.google.gson.TypeAdapter;
 import com.google.gson.TypeAdapterFactory;
 import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
-import com.google.gson.internal.GsonTypes;
+import com.google.gson.internal.$Gson$Types;
 import com.google.gson.internal.ConstructorConstructor;
 import com.google.gson.internal.Excluder;
 import com.google.gson.internal.ObjectConstructor;
@@ -42,7 +56,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-
+/** Type adapter that reflects over the fields and methods of a class. */
 public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
   private final ConstructorConstructor constructorConstructor;
   private final FieldNamingStrategy fieldNamingPolicy;
@@ -67,7 +81,7 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
     return !excluder.excludeField(f, serialize);
   }
 
-  
+  /** first element holds the default name */
   @SuppressWarnings("MixedMutabilityReturnType")
   private List<String> getFieldNames(Field f) {
     SerializedName annotation = f.getAnnotation(SerializedName.class);
@@ -89,7 +103,7 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
   }
 
   @Override
-  public <T> TypeAdapter<T> create(Gson gson, final TypeToken<T> type) {
+  public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> type) {
     Class<? super T> raw = type.getRawType();
 
     if (!Object.class.isAssignableFrom(raw)) {
@@ -142,7 +156,7 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
       return adapter;
     }
 
-    ObjectConstructor<T> constructor = constructorConstructor.get(type);
+    ObjectConstructor<T> constructor = constructorConstructor.get(type, true);
     return new FieldReflectionAdapter<>(
         constructor, getBoundFields(gson, type, raw, blockInaccessible, false));
   }
@@ -161,18 +175,18 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
   }
 
   private BoundField createBoundField(
-      final Gson context,
-      final Field field,
-      final Method accessor,
-      final String serializedName,
-      final TypeToken<?> fieldType,
-      final boolean serialize,
-      final boolean blockInaccessible) {
+      Gson context,
+      Field field,
+      Method accessor,
+      String serializedName,
+      TypeToken<?> fieldType,
+      boolean serialize,
+      boolean blockInaccessible) {
 
-    final boolean isPrimitive = Primitives.isPrimitive(fieldType.getRawType());
+    boolean isPrimitive = Primitives.isPrimitive(fieldType.getRawType());
 
     int modifiers = field.getModifiers();
-    final boolean isStaticFinalField = Modifier.isStatic(modifiers) && Modifier.isFinal(modifiers);
+    boolean isStaticFinalField = Modifier.isStatic(modifiers) && Modifier.isFinal(modifiers);
 
     JsonAdapter annotation = field.getAnnotation(JsonAdapter.class);
     TypeAdapter<?> mapped = null;
@@ -182,14 +196,14 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
           jsonAdapterFactory.getTypeAdapter(
               constructorConstructor, context, fieldType, annotation, false);
     }
-    final boolean jsonAdapterPresent = mapped != null;
+    boolean jsonAdapterPresent = mapped != null;
     if (mapped == null) {
       mapped = context.getAdapter(fieldType);
     }
 
     @SuppressWarnings("unchecked")
-    final TypeAdapter<Object> typeAdapter = (TypeAdapter<Object>) mapped;
-    final TypeAdapter<Object> writeTypeAdapter;
+    TypeAdapter<Object> typeAdapter = (TypeAdapter<Object>) mapped;
+    TypeAdapter<Object> writeTypeAdapter;
     if (serialize) {
       writeTypeAdapter =
           jsonAdapterPresent
@@ -269,10 +283,9 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
 
   private static class FieldsData {
     public static final FieldsData EMPTY =
-        new FieldsData(
-            Collections.<String, BoundField>emptyMap(), Collections.<BoundField>emptyList());
+        new FieldsData(Collections.emptyMap(), Collections.emptyList());
 
-    
+    /** Maps from JSON member name to field */
     public final Map<String, BoundField> deserializedFields;
 
     public final List<BoundField> serializedFields;
@@ -374,7 +387,7 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
           ReflectionHelper.makeAccessible(field);
         }
 
-        Type fieldType = GsonTypes.resolve(type.getType(), raw, field.getGenericType());
+        Type fieldType = $Gson$Types.resolve(type.getType(), raw, field.getGenericType());
         List<String> fieldNames = getFieldNames(field);
         String serializedName = fieldNames.get(0);
         BoundField boundField =
@@ -404,19 +417,19 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
           }
         }
       }
-      type = TypeToken.get(GsonTypes.resolve(type.getType(), raw, raw.getGenericSuperclass()));
+      type = TypeToken.get($Gson$Types.resolve(type.getType(), raw, raw.getGenericSuperclass()));
       raw = type.getRawType();
     }
     return new FieldsData(deserializedFields, new ArrayList<>(serializedFields.values()));
   }
 
   abstract static class BoundField {
-    
+    /** Name used for serialization (but not for deserialization) */
     final String serializedName;
 
     final Field field;
 
-    
+    /** Name of the underlying field */
     final String fieldName;
 
     protected BoundField(String serializedName, Field field) {
@@ -425,20 +438,35 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
       this.fieldName = field.getName();
     }
 
-    
+    /** Read this field value from the source, and append its JSON value to the writer */
     abstract void write(JsonWriter writer, Object source)
         throws IOException, IllegalAccessException;
 
-    
+    /** Read the value into the target array, used to provide constructor arguments for records */
     abstract void readIntoArray(JsonReader reader, int index, Object[] target)
         throws IOException, JsonParseException;
 
-    
+    /**
+     * Read the value from the reader, and set it on the corresponding field on target via
+     * reflection
+     */
     abstract void readIntoField(JsonReader reader, Object target)
         throws IOException, IllegalAccessException;
   }
 
-  
+  /**
+   * Base class for Adapters produced by this factory.
+   *
+   * <p>The {@link RecordAdapter} is a special case to handle records for JVMs that support it, for
+   * all other types we use the {@link FieldReflectionAdapter}. This class encapsulates the common
+   * logic for serialization and deserialization. During deserialization, we construct an
+   * accumulator A, which we use to accumulate values from the source JSON. After the object has
+   * been read in full, the {@link #finalize(Object)} method is used to convert the accumulator to
+   * an instance of T.
+   *
+   * @param <T> type of objects that this Adapter creates.
+   * @param <A> type of accumulator used to build the deserialization result.
+   */
   // This class is public because external projects check for this class with `instanceof` (even
   // though it is internal)
   public abstract static class Adapter<T, A> extends TypeAdapter<T> {
@@ -496,14 +524,17 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
       return finalize(accumulator);
     }
 
-    
+    /** Create the Object that will be used to collect each field value */
     abstract A createAccumulator();
 
-    
+    /**
+     * Read a single BoundField into the accumulator. The JsonReader will be pointed at the start of
+     * the value for the BoundField to read from.
+     */
     abstract void readField(A accumulator, JsonReader in, BoundField field)
         throws IllegalAccessException, IOException;
 
-    
+    /** Convert the accumulator to a final instance of T. */
     abstract T finalize(A accumulator);
   }
 

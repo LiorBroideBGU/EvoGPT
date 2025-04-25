@@ -25,6 +25,18 @@ class Chromosome:
         print(f"CHROMOSE GENERATION {thread_id}")
 
 
+    def _fix_runtime_errors(self):
+        success, output = False, None
+        executor = JavaExecutor(self.test_file_path)
+        current_test_suite = read_java_file_as_string(self.test_file_path)
+        for i in range(6):
+            success, output = executor.run_java()
+            if not success:
+                current_test_suite = remove_junit_tests(current_test_suite, output)
+                save_test_suite(current_test_suite, self.test_file_path)
+            else:
+                break
+
     def _locate_test_file(self):
         """
         Locate the main test file inside the directory.
@@ -40,7 +52,7 @@ class Chromosome:
         Compute the code's metrics and fitness score for this chromosome.
         Based on line coverage, branch coverage and mutation score.
         """
-
+        self._fix_runtime_errors()
         jcc = JavaCodeCoverage(f"{self.path}", self.java_file_name, "gson", self.thread_id)
         mutation_scorer = PITestRunner(project_name="gson",
         class_name=f"com.google.gson.{self.java_file_name}",  # fully qualified class name

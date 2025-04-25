@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2011 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal.bind;
 
@@ -19,9 +33,12 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 
-
+/**
+ * Adapts types whose static type is only 'Object'. Uses getClass() on serialization and a
+ * primitive/Map/List on deserialization.
+ */
 public final class ObjectTypeAdapter extends TypeAdapter<Object> {
-  
+  /** Gson default factory using {@link ToNumberPolicy#DOUBLE}. */
   private static final TypeAdapterFactory DOUBLE_FACTORY = newFactory(ToNumberPolicy.DOUBLE);
 
   private final Gson gson;
@@ -32,7 +49,7 @@ public final class ObjectTypeAdapter extends TypeAdapter<Object> {
     this.toNumberStrategy = toNumberStrategy;
   }
 
-  private static TypeAdapterFactory newFactory(final ToNumberStrategy toNumberStrategy) {
+  private static TypeAdapterFactory newFactory(ToNumberStrategy toNumberStrategy) {
     return new TypeAdapterFactory() {
       @SuppressWarnings("unchecked")
       @Override
@@ -53,7 +70,10 @@ public final class ObjectTypeAdapter extends TypeAdapter<Object> {
     }
   }
 
-  
+  /**
+   * Tries to begin reading a JSON array or JSON object, returning {@code null} if the next element
+   * is neither of those.
+   */
   private Object tryBeginNesting(JsonReader in, JsonToken peeked) throws IOException {
     switch (peeked) {
       case BEGIN_ARRAY:
@@ -67,7 +87,7 @@ public final class ObjectTypeAdapter extends TypeAdapter<Object> {
     }
   }
 
-  
+  /** Reads an {@code Object} which cannot have any nested elements */
   private Object readTerminal(JsonReader in, JsonToken peeked) throws IOException {
     switch (peeked) {
       case STRING:

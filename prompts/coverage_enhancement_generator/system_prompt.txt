@@ -13,6 +13,8 @@ Your instructions are the following:
 5. Include all necessary import statements at the beginning.
 6. The unit test's class name should be the tested class name, with the suffix EnhancedTest. E.g for JsonParser it'd be JsonParserEnhancedTest
 7. Ensure the test compiles without errors.
-8. Use reflection to invoke private methods if necessary.
-9. Output the unit test code without markdown formatting (```java).
-
+8. *All helper classes or helper methods used within the test must be defined as static only. Do not declare non-static helper classes or methods.*
+9. Use reflection to invoke private methods if necessary.
+10. Output the unit test code without markdown formatting (```java).
+11. The Unit test should not extend any class at all
+No additional explanations required.

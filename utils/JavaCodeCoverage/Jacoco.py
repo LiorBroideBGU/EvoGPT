@@ -59,7 +59,7 @@ class JavaCodeCoverage:
         coverage_file = os.path.join(output_dir, "coverage.exec")
 
         try:
-            subprocess.run(
+            result = subprocess.run(
                 [
                     JAVA_BIN,
                     "-javaagent:" + jacoco_agent + f"=destfile={coverage_file}",  # JaCoCo agent argument
@@ -74,6 +74,7 @@ class JavaCodeCoverage:
             print(f"Tests ran successfully. Coverage data saved in {coverage_file}.")
             return True
         except subprocess.CalledProcessError as e:
+
             print(f"Test run failed: {e.stderr}")
             return False
 
@@ -128,7 +129,40 @@ class JavaCodeCoverage:
 
         return True
 
-    def parse_jacoco_xml(self,xml_file):
+    # JVM descriptor mapping
+    JVM_TYPE_MAP = {
+        'I': 'int', 'Z': 'boolean', 'D': 'double', 'F': 'float',
+        'J': 'long', 'B': 'byte', 'C': 'char', 'S': 'short', 'V': 'void'
+    }
+
+    def parse_jvm_descriptor(self,desc: str):
+        # JVM descriptor mapping
+        JVM_TYPE_MAP = {
+            'I': 'int', 'Z': 'boolean', 'D': 'double', 'F': 'float',
+            'J': 'long', 'B': 'byte', 'C': 'char', 'S': 'short', 'V': 'void'
+        }
+        params = []
+        i = 1  # skip '('
+        while desc[i] != ')':
+            array_dim = 0
+            while desc[i] == '[':
+                array_dim += 1
+                i += 1
+
+            if desc[i] == 'L':
+                semicolon_index = desc.index(';', i)
+                typename = desc[i + 1:semicolon_index].split('/')[-1]
+                i = semicolon_index + 1
+            else:
+                typename = JVM_TYPE_MAP.get(desc[i], desc[i])
+                i += 1
+
+            typename += '[]' * array_dim
+            params.append(typename)
+
+        return params  # return_type is ignored
+
+    def parse_jacoco_xml(self, xml_file):
         java_source_code = open(os.path.join(self.java_files_dir, f"{self.test_class}.java")).read()
         tree = ET.parse(xml_file)
         root = tree.getroot()
@@ -139,7 +173,6 @@ class JavaCodeCoverage:
         for package in root.findall("package"):
             for class_element in package.findall("class"):
                 class_name = class_element.get("name")
-                # Skip classes with "Test" in the name (assuming they're test files)
                 if "Test" in class_name:
                     continue
 
@@ -147,9 +180,12 @@ class JavaCodeCoverage:
 
                 for method in class_element.findall("method"):
                     method_name = method.get("name")
+                    desc = method.get("desc", "")
+                    param_types = self.parse_jvm_descriptor(desc)
+                    full_signature = f"{method_name}({', '.join(param_types)})"
+
                     line_number = int(method.get("line", "-1"))
 
-                    # Extract branch and line counters
                     branch_counter = method.find("counter[@type='BRANCH']")
                     line_counter = method.find("counter[@type='LINE']")
                     if line_counter is not None:
@@ -167,13 +203,11 @@ class JavaCodeCoverage:
                     else:
                         branch_coverage = 100 if line_coverage > 0 else 0
 
-
-                    coverage_results[class_name][method_name] = {
+                    coverage_results[class_name][full_signature] = {
                         "branch_coverage": branch_coverage,
                         "line_coverage": line_coverage,
                     }
 
-            # Find missed branches from the source file (mb > 0)
             for source_file in package.findall("sourcefile"):
                 for line in source_file.findall("line"):
                     line_number = int(line.get("nr"))
@@ -181,7 +215,6 @@ class JavaCodeCoverage:
                     if missed_branches_count > 0:
                         missed_branches[line_number] = missed_branches_count
 
-        # Retrieve exact lines of Java code for missed branches
         java_lines = java_source_code.split("\n")
         missed_branch_lines = {
             line_number: java_lines[line_number - 1].strip()

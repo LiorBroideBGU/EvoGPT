@@ -116,7 +116,7 @@ class MutationAssertionGenerator(LLMAgent):
 
         # Shuffle mutation keys to apply a random mutation
         mutation_keys = list(self.mutation_mapping.keys())
-        # random.shuffle(mutation_keys)  # Ensures random selection
+        random.shuffle(mutation_keys)  # Ensures random selection
 
         for pattern in mutation_keys:
             regex_pattern = self.exact_operator_regex(pattern)
@@ -130,25 +130,39 @@ class MutationAssertionGenerator(LLMAgent):
 
         return mutated_function, applied_mutation
 
-    def mutation_generation(self):
+    def mutation_assertion_generation(self):
         source_code = read_java_file_as_string(self.source_code_path)
         unit_test = read_java_file_as_string(self.unit_test_path)
         source_code_functions = extract_public_methods(source_code)
+        num_functions = len(source_code_functions)
+
         for function_name in source_code_functions:
+            # Determine if we should mutate this function (1/|T| chance)
+            if random.random() > 1 / num_functions:
+                continue  # Skip mutation for this function
+
             function = extract_java_function(source_code, function_name)
             mutated_function, applied_mutation = self.apply_mutation(function)
+
+            if not applied_mutation:
+                continue  # No mutation was actually applied
+
             modified_source_code = replace_java_function(source_code, function_name, mutated_function)
             save_test_suite(modified_source_code, self.source_code_path)
             executor = JavaExecutor(java_file_path=self.source_code_path)
             executor.compile_java()
             test_ran, output = self.unit_test_java_executor.run_java()
+
             while test_ran and applied_mutation:
                 self.update_long_term_memory('session1',
-                                             self.input_prompt.format(function, mutated_function,unit_test))
+                                             self.input_prompt.format(function, mutated_function, unit_test))
                 modified_test = self.get_assertion_injection('session1')
                 test_name = extract_public_methods(modified_test)[0]
-                modified_unit_test = replace_java_function(unit_test,test_name,modified_test)
+                modified_unit_test = replace_java_function(unit_test, test_name, modified_test)
                 save_test_suite(modified_unit_test, self.unit_test_path)
                 test_ran, output = self.unit_test_java_executor.run_java()
+
+            # Restore original source code after mutation round
             save_test_suite(source_code, self.source_code_path)
+
 

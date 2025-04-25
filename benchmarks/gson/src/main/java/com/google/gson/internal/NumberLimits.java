@@ -3,7 +3,10 @@ package com.google.gson.internal;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
-
+/**
+ * This class enforces limits on numbers parsed from JSON to avoid potential performance problems
+ * when extremely large numbers are used.
+ */
 public class NumberLimits {
   private NumberLimits() {}
 

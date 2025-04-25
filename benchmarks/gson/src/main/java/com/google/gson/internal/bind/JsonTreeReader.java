@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2011 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal.bind;
 
@@ -17,7 +31,11 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
 
-
+/**
+ * This reader walks the elements of a JsonElement as if it was coming from a character stream.
+ *
+ * @author Jesse Wilson
+ */
 public final class JsonTreeReader extends JsonReader {
   private static final Reader UNREADABLE_READER =
       new Reader() {
@@ -33,11 +51,25 @@ public final class JsonTreeReader extends JsonReader {
       };
   private static final Object SENTINEL_CLOSED = new Object();
 
-  
+  /** The nesting stack. Using a manual array rather than an ArrayList saves 20%. */
   private Object[] stack = new Object[32];
+
+  /**
+   * The used size of {@link #stack}; the value at {@code stackSize - 1} is the value last placed on
+   * the stack. {@code stackSize} might differ from the nesting depth, because the stack also
+   * contains temporary additional objects, for example for a JsonArray it contains the JsonArray
+   * object as well as the corresponding iterator.
+   */
   private int stackSize = 0;
 
-  
+  /*
+   * The path members. It corresponds directly to stack: At indices where the
+   * stack contains an object (EMPTY_OBJECT, DANGLING_NAME or NONEMPTY_OBJECT),
+   * pathNames contains the name at this scope. Where it contains an array
+   * (EMPTY_ARRAY, NONEMPTY_ARRAY) pathIndices contains the current index in
+   * that array. Otherwise the value is undefined, and we take advantage of that
+   * by incrementing pathIndices when doing so isn't useful.
+   */
   private String[] pathNames = new String[32];
   private int[] pathIndices = new int[32];
 
@@ -250,14 +282,14 @@ public final class JsonTreeReader extends JsonReader {
   }
 
   JsonElement nextJsonElement() throws IOException {
-    final JsonToken peeked = peek();
+    JsonToken peeked = peek();
     if (peeked == JsonToken.NAME
         || peeked == JsonToken.END_ARRAY
         || peeked == JsonToken.END_OBJECT
         || peeked == JsonToken.END_DOCUMENT) {
       throw new IllegalStateException("Unexpected " + peeked + " when reading a JsonElement.");
     }
-    final JsonElement element = (JsonElement) peekStack();
+    JsonElement element = (JsonElement) peekStack();
     skipValue();
     return element;
   }

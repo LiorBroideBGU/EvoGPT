@@ -11,6 +11,8 @@ import threading
 from app.chromosome import Chromosome
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 class ChromosomesGenerator:
     def __init__(self, source_code_path, project_name):
@@ -37,7 +39,7 @@ class ChromosomesGenerator:
         # Coverage
         jcc = JavaCodeCoverage(
             f'C:\\Users\\liorb\\PycharmProjects\\EvoChat\\results\\unit_tests\\{self.project_name}\\{self.class_name}\\{str(thread_number)}\\javafiles',
-            'JsonArray',
+            self.class_name,
             self.project_name,
             thread_id=thread_number
         )
@@ -45,6 +47,7 @@ class ChromosomesGenerator:
         coverage_metrics, missed_branches = jcc.parse_jacoco_xml(
             rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\classfiles\coverage.xml'
         )
+        print(coverage_metrics, missed_branches)
 
         # Enhancements
         test_enhancements = CoverageEnhancementAgent(
@@ -63,7 +66,7 @@ class ChromosomesGenerator:
 
         first_unit_test = read_java_file_as_string(test1_path)
         enhanced_unit_test = read_java_file_as_string(test2_path)
-        final_unit_test = merge_java_unit_tests(first_unit_test, enhanced_unit_test)
+        final_unit_test = merge_java_unit_tests(first_unit_test, enhanced_unit_test, f'{self.class_name}Test')
 
         # Cleanup
         delete_file(test1_path)
@@ -83,6 +86,7 @@ class ChromosomesGenerator:
         print(f"Thread-{thread_number} done, saved final test at: {merged_path}")
 
 
+
     def select_two_parents(self):
 
         # Step 1: Sort chromosomes by fitness (higher is better)
@@ -99,6 +103,8 @@ class ChromosomesGenerator:
 
         # Step 4: Select two parents using weighted sampling
         parents = random.choices(sorted_population, weights=probabilities, k=2)
+        while parents[0] == parents[1]:
+            parents = random.choices(sorted_population, weights=probabilities, k=2)
         return parents[0], parents[1]
 
     def save_chromosome_code(self, iteration, offspring1_code, offspring2_code):
@@ -131,6 +137,8 @@ class ChromosomesGenerator:
         while time.time() - start_time < max_time:
             while len(elites) < len(self.chromosomes):
                 parent1, parent2 = self.select_two_parents()
+                print(parent1.test_file_path)
+                print(parent2.test_file_path)
                 if random.random() < self.crossover_probability:
                     offspring1_code, offspring2_code = parent1.crossover(parent2)
                 else:
@@ -189,6 +197,8 @@ class ChromosomesGenerator:
             print(chromosome)
         print(f"BEST CHROMOSOME: {final}")
         #TODO: Delete all unit tests but this one.
+
+        # TODO: Delete all unit tests but this one.
 
 if __name__ == '__main__':
     temperatures = [0.25]

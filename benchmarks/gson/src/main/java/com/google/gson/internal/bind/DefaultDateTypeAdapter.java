@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2008 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal.bind;
 
@@ -25,11 +39,23 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.TimeZone;
 
-
+/**
+ * This type adapter supports subclasses of date by defining a {@link
+ * DefaultDateTypeAdapter.DateType} and then using its {@code createAdapterFactory} methods.
+ *
+ * <p><b>Important:</b> Instances of this class (or rather the {@link SimpleDateFormat} they use)
+ * capture the current default {@link Locale} and {@link TimeZone} when they are created. Therefore
+ * avoid storing factories obtained from {@link DateType} in {@code static} fields, since they only
+ * create a single adapter instance and its behavior would then depend on when Gson classes are
+ * loaded first, and which default {@code Locale} and {@code TimeZone} was used at that point.
+ *
+ * @author Inderjeet Singh
+ * @author Joel Leitch
+ */
 public final class DefaultDateTypeAdapter<T extends Date> extends TypeAdapter<T> {
   private static final String SIMPLE_NAME = "DefaultDateTypeAdapter";
 
-  
+  /** Factory for {@link Date} adapters which use {@link DateFormat#DEFAULT} as style. */
   public static final TypeAdapterFactory DEFAULT_STYLE_FACTORY =
       // Because SimpleDateFormat captures the default TimeZone when it was created, let the factory
       // always create new DefaultDateTypeAdapter instances (which are then cached by the Gson
@@ -78,23 +104,17 @@ public final class DefaultDateTypeAdapter<T extends Date> extends TypeAdapter<T>
       return createFactory(new DefaultDateTypeAdapter<>(this, datePattern));
     }
 
-    public final TypeAdapterFactory createAdapterFactory(int style) {
-      return createFactory(new DefaultDateTypeAdapter<>(this, style));
-    }
-
     public final TypeAdapterFactory createAdapterFactory(int dateStyle, int timeStyle) {
       return createFactory(new DefaultDateTypeAdapter<>(this, dateStyle, timeStyle));
-    }
-
-    public final TypeAdapterFactory createDefaultsAdapterFactory() {
-      return createFactory(
-          new DefaultDateTypeAdapter<>(this, DateFormat.DEFAULT, DateFormat.DEFAULT));
     }
   }
 
   private final DateType<T> dateType;
 
-  
+  /**
+   * List of 1 or more different date formats used for de-serialization attempts. The first of them
+   * is used for serialization as well.
+   */
   private final List<DateFormat> dateFormats = new ArrayList<>();
 
   private DefaultDateTypeAdapter(DateType<T> dateType, String datePattern) {
@@ -102,17 +122,6 @@ public final class DefaultDateTypeAdapter<T extends Date> extends TypeAdapter<T>
     dateFormats.add(new SimpleDateFormat(datePattern, Locale.US));
     if (!Locale.getDefault().equals(Locale.US)) {
       dateFormats.add(new SimpleDateFormat(datePattern));
-    }
-  }
-
-  private DefaultDateTypeAdapter(DateType<T> dateType, int style) {
-    this.dateType = Objects.requireNonNull(dateType);
-    dateFormats.add(DateFormat.getDateInstance(style, Locale.US));
-    if (!Locale.getDefault().equals(Locale.US)) {
-      dateFormats.add(DateFormat.getDateInstance(style));
-    }
-    if (JavaVersion.isJava9OrLater()) {
-      dateFormats.add(PreJava9DateFormatProvider.getUsDateFormat(style));
     }
   }
 

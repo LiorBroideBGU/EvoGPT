@@ -81,7 +81,7 @@ import com.google.gson.reflect.TypeToken;
  * mapping from lowercase name to enum value is computed eagerly.
  *
  * <p>As with type adapters, factories must be <i>registered</i> with a {@link
- * GsonBuilder} for them to take effect:
+ * com.google.gson.GsonBuilder} for them to take effect:
  *
  * <pre>{@code
  * GsonBuilder builder = new GsonBuilder();
@@ -117,7 +117,7 @@ import com.google.gson.reflect.TypeToken;
  *   }
  *
  *   private <E> TypeAdapter<Multiset<E>> newMultisetAdapter(
- *       final TypeAdapter<E> elementAdapter) {
+ *       TypeAdapter<E> elementAdapter) {
  *     return new TypeAdapter<Multiset<E>>() {
  *       public void write(JsonWriter out, Multiset<E> value) throws IOException {
  *         if (value == null) {

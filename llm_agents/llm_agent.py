@@ -4,7 +4,7 @@ from langchain.schema import SystemMessage
 
 class LLMAgent:
     def __init__(self, api_key, model, temperature):
-        self.chat_model = ChatOpenAI(api_key=api_key, model=model, temperature=temperature)
+        self.chat_model = ChatOpenAI(api_key=api_key, model=model, temperature=temperature, max_retries=20)
         self.chat_store = {}
         self.long_term_memory = {}
         

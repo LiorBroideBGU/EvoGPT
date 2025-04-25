@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2011 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.google.gson.internal.bind;
 
 import com.google.gson.Gson;
@@ -59,7 +73,11 @@ final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {
     chosen.write(out, value);
   }
 
-  
+  /**
+   * Returns whether the type adapter uses reflection.
+   *
+   * @param typeAdapter the type adapter to check.
+   */
   private static boolean isReflective(TypeAdapter<?> typeAdapter) {
     // Run this in loop in case multiple delegating adapters are nested
     while (typeAdapter instanceof SerializationDelegatingTypeAdapter) {
@@ -75,7 +93,7 @@ final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {
     return typeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter;
   }
 
-  
+  /** Finds a compatible runtime type if it is more specific */
   private static Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {
     if (value != null && (type instanceof Class<?> || type instanceof TypeVariable<?>)) {
       type = value.getClass();

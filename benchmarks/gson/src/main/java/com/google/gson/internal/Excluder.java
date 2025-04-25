@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2008 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal;
 
@@ -21,7 +35,17 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-
+/**
+ * This class selects which fields and types to omit. It is configurable, supporting version
+ * attributes {@link Since} and {@link Until}, modifiers, synthetic fields, anonymous and local
+ * classes, inner classes, and fields with the {@link Expose} annotation.
+ *
+ * <p>This class is a type adapter factory; types that are excluded will be adapted to null. It may
+ * delegate to another type adapter if only one direction is excluded.
+ *
+ * @author Joel Leitch
+ * @author Jesse Wilson
+ */
 public final class Excluder implements TypeAdapterFactory, Cloneable {
   private static final double IGNORE_VERSIONS = -1.0d;
   public static final Excluder DEFAULT = new Excluder();
@@ -84,18 +108,21 @@ public final class Excluder implements TypeAdapterFactory, Cloneable {
   }
 
   @Override
-  public <T> TypeAdapter<T> create(final Gson gson, final TypeToken<T> type) {
+  public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> type) {
     Class<?> rawType = type.getRawType();
 
-    final boolean skipSerialize = excludeClass(rawType, true);
-    final boolean skipDeserialize = excludeClass(rawType, false);
+    boolean skipSerialize = excludeClass(rawType, true);
+    boolean skipDeserialize = excludeClass(rawType, false);
 
     if (!skipSerialize && !skipDeserialize) {
       return null;
     }
 
     return new TypeAdapter<T>() {
-      
+      /**
+       * The delegate is lazily created because it may not be needed, and creating it may fail.
+       * Field has to be {@code volatile} because {@link Gson} guarantees to be thread-safe.
+       */
       private volatile TypeAdapter<T> delegate;
 
       @Override
@@ -174,7 +201,18 @@ public final class Excluder implements TypeAdapterFactory, Cloneable {
       return true;
     }
 
-    
+    /*
+     * Exclude anonymous and local classes because they can have synthetic fields capturing enclosing
+     * values which makes serialization and deserialization unreliable.
+     * Don't exclude anonymous enum subclasses because enum types have a built-in adapter.
+     *
+     * Exclude only for deserialization; for serialization allow because custom adapter might be
+     * used; if no custom adapter exists reflection-based adapter otherwise excludes value.
+     *
+     * Cannot allow deserialization reliably here because some custom adapters like Collection adapter
+     * fall back to creating instances using Unsafe, which would likely lead to runtime exceptions
+     * for anonymous and local classes if they capture values.
+     */
     if (!serialize
         && !Enum.class.isAssignableFrom(clazz)
         && ReflectionHelper.isAnonymousOrNonStaticLocal(clazz)) {

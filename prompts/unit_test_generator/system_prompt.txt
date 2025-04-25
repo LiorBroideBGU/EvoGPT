@@ -12,6 +12,6 @@ You are required to:
 5. Include all necessary import statements at the beginning.
 6. Ensure the test compiles without errors.
 7. Use reflection to invoke private methods if necessary.
-8. Output the unit test code without markdown formatting (```java).
+8. *All helper classes or helper methods used within the test must be defined as static only. Do not declare non-static helper classes or methods.*
+9. Output the unit test code without markdown formatting (```java).
 No additional explanations required.
-

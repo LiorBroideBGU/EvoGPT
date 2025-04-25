@@ -36,7 +36,6 @@ class PITestRunner:
 
             print("[PITest] Running command:\n", " ".join(cmd))
             result = subprocess.run(cmd, capture_output=True, text=True)
-
             return self.extract_pitest_metrics(result.stdout)
         except Exception as e:
             print(f"[PITest] Error running mutation testing: {e}")

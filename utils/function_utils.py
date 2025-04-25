@@ -41,6 +41,20 @@ def get_class_imports(source_folder: str, stacktrace: str):
     :param source_folder: The path to the src folder containing the source code.
     :param stacktrace: The import errors received from the compiler.
     """
+    EXCEPTIONS_REQUIRING_IMPORT = {
+        'IOException': 'java.io.IOException',
+        'SQLException': 'java.sql.SQLException',
+        'ParseException': 'java.text.ParseException',
+        'FileNotFoundException': 'java.io.FileNotFoundException',
+        'IllegalStateException': 'java.lang.IllegalStateException',
+        'IllegalArgumentException': 'java.lang.IllegalArgumentException',
+        'NullPointerException': 'java.lang.NullPointerException',
+        'IndexOutOfBoundsException': 'java.lang.IndexOutOfBoundsException',
+        'ArithmeticException': 'java.lang.ArithmeticException',
+        'NumberFormatException': 'java.lang.NumberFormatException',
+        'UnsupportedOperationException': 'java.lang.UnsupportedOperationException'
+    }
+
     pattern = r"error:\s*package\s+(\S+)\s+does\s+not\s+exist"
     pattern_missing_imports = r"symbol:\s+variable\s+(\w+)"
     missing_classes = re.findall(pattern_missing_imports, stacktrace)
@@ -69,7 +83,13 @@ def get_class_imports(source_folder: str, stacktrace: str):
         refs = set(class_map[name])
         for ref in refs:
             imports.append(f"import {ref}.{name};")
-    return imports
+
+    # Add known exception class imports if found in stacktrace
+    for exc, full_import in EXCEPTIONS_REQUIRING_IMPORT.items():
+        if exc in stacktrace:
+            imports.append(f"import {full_import};")
+
+    return list(sorted(set(imports)))
 
 def get_error_functions(stacktrace: str, code: str):
     """
@@ -121,53 +141,61 @@ def get_error_functions(stacktrace: str, code: str):
 
 def remove_junit_tests_using_test_names(java_code: str, function_names: list) -> str:
     """
-    Removes specified Java functions from the code.
+    Removes specified @Test annotated Java functions from the code safely.
 
     Args:
         java_code (str): The Java code as a string.
-        function_names (list): List of function names to remove.
+        function_names (list): List of test function names to remove.
 
     Returns:
-        str: The modified Java code.
+        str: The modified Java code with specified test methods removed.
     """
-    tree = javalang.parse.parse(java_code)
-
-    # Store original lines for rebuilding
     lines = java_code.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
 
-    # List of line ranges to remove
-    remove_ranges = []
+        # Check if this is the start of a test method to remove
+        if line.startswith("@Test"):
+            j = i + 1
+            # Find the method signature
+            while j < len(lines) and not re.search(r'public\s+void\s+(\w+)\s*\(', lines[j]):
+                j += 1
 
-    # Traverse AST and find test methods to remove
-    for path, node in tree.filter(javalang.tree.MethodDeclaration):
-        if node.name in function_names:
-            start_line = node.position.line - 1  # Convert to zero-based index
+            if j >= len(lines):
+                i += 1
+                continue
 
-            # Find if there is an @Test annotation above the method
-            annotation_line = None
-            for i in range(start_line - 1, -1, -1):
-                if lines[i].strip().startswith("@Test"):
-                    annotation_line = i
-                    break
+            method_line = lines[j]
+            match = re.search(r'public\s+void\s+(\w+)\s*\(', method_line)
+            if match:
+                method_name = match.group(1)
+                if method_name in function_names:
+                    # Start removing from `i` (including @Test) until matching brace
+                    start = i
+                    brace_count = 0
+                    found_open = False
+                    k = j
+                    while k < len(lines):
+                        brace_count += lines[k].count('{')
+                        brace_count -= lines[k].count('}')
+                        if "{" in lines[k]:
+                            found_open = True
+                        if found_open and brace_count <= 0:
+                            break
+                        k += 1
+                    # Remove block
+                    del lines[start:k + 1]
+                    i = start  # Don't increment; we have a new line here now
+                    continue
+        i += 1
 
-            remove_start = annotation_line if annotation_line is not None else start_line
+    # Fix unbalanced braces if needed
+    open_braces = sum(line.count("{") for line in lines)
+    close_braces = sum(line.count("}") for line in lines)
+    if close_braces > open_braces:
+        lines.append("}")
 
-            # Find method end (last closing bracket)
-            end_line = start_line + 1
-            brace_count = 0
-            for i in range(start_line, len(lines)):
-                brace_count += lines[i].count("{") - lines[i].count("}")
-                if brace_count == 0:
-                    end_line = i
-                    break
-
-            remove_ranges.append((remove_start, end_line))
-
-    # Remove lines from bottom to top to avoid index shifting
-    for start, end in sorted(remove_ranges, reverse=True):
-        del lines[start:end + 1]
-
-    # Reconstruct Java code
     return "\n".join(lines)
 
 def remove_junit_tests(java_code: str, stacktrace: str) -> str:
@@ -232,94 +260,153 @@ def extract_project_name(path: str):
 
 import re
 
-def merge_java_unit_tests(java_test_1, java_test_2):
-    """
-    Merges two Java unit test class strings, considering imports, class-level variables, and test methods.
-    If a method in java_test_2 has the same name as one in java_test_1, it appends 'Enhanced' to its name.
+import re
 
-    Parameters:
-    - java_test_1 (str): The first Java test class as a string.
-    - java_test_2 (str): The second Java test class as a string.
+def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -> str:
+    def get_imports(code: str):
+        return set(re.findall(r'^import\s+.*?;', code, re.MULTILINE))
 
-    Returns:
-    - str: The merged Java test class.
-    """
-    # Extract imports
-    imports_1 = set(re.findall(r'^import .*?;', java_test_1, re.MULTILINE))
-    imports_2 = set(re.findall(r'^import .*?;', java_test_2, re.MULTILINE))
-    merged_imports = sorted(imports_1 | imports_2)  # Merge and sort imports
+    def get_fields(code: str):
+        return re.findall(r'^\s*(private|protected|public)?\s+[\w<>\[\]]+\s+\w+\s*;', code, re.MULTILINE)
 
-    # Extract class name
-    class_match_1 = re.search(r'public\s+class\s+(\w+)', java_test_1)
-    class_match_2 = re.search(r'public\s+class\s+(\w+)', java_test_2)
-    class_name = class_match_1.group(1) if class_match_1 else (
-        class_match_2.group(1) if class_match_2 else "MergedTest")
-
-    # Extract class-level variables (fields)
-    fields_1 = set(re.findall(r'(private|protected|public)?\s+\w+\s+\w+\s*;', java_test_1))
-    fields_2 = set(re.findall(r'(private|protected|public)?\s+\w+\s+\w+\s*;', java_test_2))
-    merged_fields = sorted(fields_1 | fields_2)
-
-    # Function to extract full Java methods, handling nested brackets
-    def extract_test_methods(java_code):
-        method_pattern = re.compile(r'@Test\s+public\s+void\s+\w+\s*\(.*?\)\s*\{', re.MULTILINE)
+    def extract_test_methods(code: str):
+        method_pattern = re.compile(r'@Test\s+public\s+void\s+(\w+)\s*\([^)]*\)\s*\{', re.MULTILINE)
         methods = []
-        for match in method_pattern.finditer(java_code):
+        for match in method_pattern.finditer(code):
             start = match.start()
-            open_braces = 0
+            braces = 0
             end = start
-            for i in range(start, len(java_code)):
-                if java_code[i] == '{':
-                    open_braces += 1
-                elif java_code[i] == '}':
-                    open_braces -= 1
-                    if open_braces == 0:
+            for i in range(start, len(code)):
+                if code[i] == '{':
+                    braces += 1
+                elif code[i] == '}':
+                    braces -= 1
+                    if braces == 0:
                         end = i + 1
                         break
-            methods.append(java_code[start:end])
+            methods.append(code[start:end])
         return methods
 
-    # Extract test methods properly with full bodies
-    test_methods_1_full = extract_test_methods(java_test_1)
-    test_methods_2_full = extract_test_methods(java_test_2)
+    def extract_static_methods(code: str):
+        """
+        Extracts static methods, including those with generic declarations and varargs.
+        Returns a dict of method name -> full method source.
+        """
+        pattern = re.compile(
+            r'''
+            ^\s*
+            (public|protected|private)?\s+         # optional access modifier
+            static\s+                              # static keyword
+            (<[^>]+>\s+)?                          # optional generic declaration, e.g. <T>
+            [\w\[\]<>?,\s]+?\s+                    # return type (e.g., T, List<T>, Map<K, V>, etc.)
+            (\w+)\s*                               # method name
+            \([^)]*\)                              # argument list (no multiline args)
+            (\s*throws\s+[^{]+)?                   # optional throws clause
+            \s*\{                                  # method opening brace
+            ''',
+            re.MULTILINE | re.VERBOSE
+        )
 
-    # Extract method names
-    test_method_names_1 = set(re.findall(r'@Test\s+public\s+void\s+(\w+)\s*\(', java_test_1))
-    test_methods_2_dict = {}
+        methods = {}
+        for match in pattern.finditer(code):
+            method_name = match.group(4)
+            start = match.start()
 
-    for method in test_methods_2_full:
-        method_name_match = re.search(r'@Test\s+public\s+void\s+(\w+)\s*\(', method)
-        if method_name_match:
-            method_name = method_name_match.group(1)
-            if method_name in test_method_names_1:
-                # Rename conflicting test methods
-                new_method_name = method_name + "Enhanced"
-                method = re.sub(rf'(@Test\s+public\s+void\s+){method_name}(\s*\()', rf'\1{new_method_name}\2', method)
-                test_methods_2_dict[new_method_name] = method
-            else:
-                test_methods_2_dict[method_name] = method
+            # Extract full method body with brace matching
+            brace_count = 0
+            for i in range(start, len(code)):
+                if code[i] == '{':
+                    brace_count += 1
+                elif code[i] == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end = i + 1
+                        methods[method_name] = code[start:end]
+                        break
 
-    # Merge test methods, avoiding duplicates
-    merged_test_methods = list(set(test_methods_1_full + list(test_methods_2_dict.values())))
-    merged_test_methods.sort()  # Sort for consistency
+        return methods
 
-    # Construct the merged Java test class
-    merged_java_test = "\n".join(merged_imports) + "\n\n"
-    merged_java_test += f"public class {class_name} {{\n\n"
+    def extract_static_classes(code: str):
+        pattern = re.compile(r'\bstatic\b\s+class\s+(\w+)\s*\{', re.MULTILINE)
+        classes = {}
+        for match in pattern.finditer(code):
+            class_name = match.group(1)
+            start = match.start()
+            braces = 0
+            for i in range(start, len(code)):
+                if code[i] == '{':
+                    braces += 1
+                elif code[i] == '}':
+                    braces -= 1
+                    if braces == 0:
+                        end = i + 1
+                        classes[class_name] = code[start:end]
+                        break
+        return classes
 
-    # Add merged fields
-    for field in merged_fields:
-        merged_java_test += f"    {field}\n"
+    def rename_conflicts(source_code: str, names_to_rename: list, suffix="_2"):
+        for name in names_to_rename:
+            pattern = re.compile(rf'\b{name}\b')
+            source_code = pattern.sub(f"{name}{suffix}", source_code)
+        return source_code
 
-    merged_java_test += "\n"
+    # Step 1: Gather elements
+    imports = sorted(get_imports(java_test_1) | get_imports(java_test_2))
+    fields = sorted(set(get_fields(java_test_1)) | set(get_fields(java_test_2)))
 
-    # Add merged test methods
-    for method in merged_test_methods:
-        merged_java_test += f"    {method}\n\n"
+    test_methods_1 = extract_test_methods(java_test_1)
+    test_methods_2 = extract_test_methods(java_test_2)
+    test_method_names_1 = set(re.findall(r'@Test\s+public\s+void\s+(\w+)', java_test_1))
 
-    merged_java_test += "}"
+    static_methods_1 = extract_static_methods(java_test_1)
+    static_methods_2 = extract_static_methods(java_test_2)
+    static_classes_1 = extract_static_classes(java_test_1)
+    static_classes_2 = extract_static_classes(java_test_2)
 
-    return merged_java_test
+    # Step 2: Rename conflicts in java_test_2
+    method_conflicts = set(static_methods_1.keys()) & set(static_methods_2.keys())
+    class_conflicts = set(static_classes_1.keys()) & set(static_classes_2.keys())
+    test_method_conflicts = {name for name in test_method_names_1}
+
+    java_test_2 = rename_conflicts(java_test_2, list(method_conflicts | class_conflicts))
+
+    # Re-extract from updated java_test_2
+    test_methods_2 = extract_test_methods(java_test_2)
+    static_methods_2 = extract_static_methods(java_test_2)
+    static_classes_2 = extract_static_classes(java_test_2)
+
+    # Step 3: Merge everything
+    merged_code = "\n".join(imports) + "\n\n"
+    merged_code += f"public class {class_name} {{\n\n"
+
+    # Fields
+    for field in fields:
+        merged_code += f"    {field}\n"
+
+    merged_code += "\n"
+
+    # Static classes
+    for cls_code in list(static_classes_1.values()) + list(static_classes_2.values()):
+        merged_code += f"    {cls_code}\n\n"
+
+    # Static methods
+    for meth_code in list(static_methods_1.values()) + list(static_methods_2.values()):
+        merged_code += f"    {meth_code}\n\n"
+
+    # Test methods (rename test method collisions)
+    for method in test_methods_2:
+        method_name = re.search(r'@Test\s+public\s+void\s+(\w+)', method).group(1)
+        if method_name in test_method_conflicts:
+            method = re.sub(rf'(@Test\s+public\s+void\s+){method_name}(\s*\()', rf'\1{method_name}Enhanced\2', method)
+        merged_code += f"    {method}\n\n"
+
+    for method in test_methods_1:
+        merged_code += f"    {method}\n\n"
+
+    merged_code += "}"
+
+    return merged_code
+
 
 
 

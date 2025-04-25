@@ -1,4 +1,18 @@
-
+/*
+ * Copyright (C) 2011 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package com.google.gson.internal.bind;
 
@@ -8,7 +22,7 @@ import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.TypeAdapter;
 import com.google.gson.TypeAdapterFactory;
-import com.google.gson.internal.GsonTypes;
+import com.google.gson.internal.$Gson$Types;
 import com.google.gson.internal.ConstructorConstructor;
 import com.google.gson.internal.JsonReaderInternalAccess;
 import com.google.gson.internal.ObjectConstructor;
@@ -23,7 +37,81 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-
+/**
+ * Adapts maps to either JSON objects or JSON arrays.
+ *
+ * <h2>Maps as JSON objects</h2>
+ *
+ * For primitive keys or when complex map key serialization is not enabled, this converts Java
+ * {@link Map Maps} to JSON Objects. This requires that map keys can be serialized as strings; this
+ * is insufficient for some key types. For example, consider a map whose keys are points on a grid.
+ * The default JSON form encodes reasonably:
+ *
+ * <pre>{@code
+ * Map<Point, String> original = new LinkedHashMap<>();
+ * original.put(new Point(5, 6), "a");
+ * original.put(new Point(8, 8), "b");
+ * System.out.println(gson.toJson(original, type));
+ * }</pre>
+ *
+ * The above code prints this JSON object:
+ *
+ * <pre>{@code
+ * {
+ *   "(5,6)": "a",
+ *   "(8,8)": "b"
+ * }
+ * }</pre>
+ *
+ * But GSON is unable to deserialize this value because the JSON string name is just the {@link
+ * Object#toString() toString()} of the map key. Attempting to convert the above JSON to an object
+ * fails with a parse exception:
+ *
+ * <pre>com.google.gson.JsonParseException: Expecting object found: "(5,6)"
+ *   at com.google.gson.JsonObjectDeserializationVisitor.visitFieldUsingCustomHandler
+ *   at com.google.gson.ObjectNavigator.navigateClassFields
+ *   ...</pre>
+ *
+ * <h2>Maps as JSON arrays</h2>
+ *
+ * An alternative approach taken by this type adapter when it is required and complex map key
+ * serialization is enabled is to encode maps as arrays of map entries. Each map entry is a two
+ * element array containing a key and a value. This approach is more flexible because any type can
+ * be used as the map's key; not just strings. But it's also less portable because the receiver of
+ * such JSON must be aware of the map entry convention.
+ *
+ * <p>Register this adapter when you are creating your GSON instance.
+ *
+ * <pre>{@code
+ * Gson gson = new GsonBuilder()
+ *   .registerTypeAdapter(Map.class, new MapAsArrayTypeAdapter())
+ *   .create();
+ * }</pre>
+ *
+ * This will change the structure of the JSON emitted by the code above. Now we get an array. In
+ * this case the arrays elements are map entries:
+ *
+ * <pre>{@code
+ * [
+ *   [
+ *     {
+ *       "x": 5,
+ *       "y": 6
+ *     },
+ *     "a",
+ *   ],
+ *   [
+ *     {
+ *       "x": 8,
+ *       "y": 8
+ *     },
+ *     "b"
+ *   ]
+ * ]
+ * }</pre>
+ *
+ * This format will serialize and deserialize just fine as long as this adapter is registered.
+ */
 public final class MapTypeAdapterFactory implements TypeAdapterFactory {
   private final ConstructorConstructor constructorConstructor;
   final boolean complexMapKeySerialization;
@@ -43,20 +131,27 @@ public final class MapTypeAdapterFactory implements TypeAdapterFactory {
       return null;
     }
 
-    Type[] keyAndValueTypes = GsonTypes.getMapKeyAndValueTypes(type, rawType);
-    TypeAdapter<?> keyAdapter = getKeyAdapter(gson, keyAndValueTypes[0]);
-    TypeAdapter<?> valueAdapter = gson.getAdapter(TypeToken.get(keyAndValueTypes[1]));
-    ObjectConstructor<T> constructor = constructorConstructor.get(typeToken);
+    Type[] keyAndValueTypes = $Gson$Types.getMapKeyAndValueTypes(type, rawType);
+    Type keyType = keyAndValueTypes[0];
+    Type valueType = keyAndValueTypes[1];
+    TypeAdapter<?> keyAdapter = getKeyAdapter(gson, keyType);
+    TypeAdapter<?> wrappedKeyAdapter =
+        new TypeAdapterRuntimeTypeWrapper<>(gson, keyAdapter, keyType);
+    TypeAdapter<?> valueAdapter = gson.getAdapter(TypeToken.get(valueType));
+    TypeAdapter<?> wrappedValueAdapter =
+        new TypeAdapterRuntimeTypeWrapper<>(gson, valueAdapter, valueType);
+    // Don't allow Unsafe usage to create instance; instances might be in broken state and calling
+    // Map methods could lead to confusing exceptions
+    boolean allowUnsafe = false;
+    ObjectConstructor<T> constructor = constructorConstructor.get(typeToken, allowUnsafe);
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     // we don't define a type parameter for the key or value types
-    TypeAdapter<T> result =
-        new Adapter(
-            gson, keyAndValueTypes[0], keyAdapter, keyAndValueTypes[1], valueAdapter, constructor);
+    TypeAdapter<T> result = new Adapter(wrappedKeyAdapter, wrappedValueAdapter, constructor);
     return result;
   }
 
-  
+  /** Returns a type adapter that writes the value as a string. */
   private TypeAdapter<?> getKeyAdapter(Gson context, Type keyType) {
     return (keyType == boolean.class || keyType == Boolean.class)
         ? TypeAdapters.BOOLEAN_AS_STRING
@@ -69,15 +164,11 @@ public final class MapTypeAdapterFactory implements TypeAdapterFactory {
     private final ObjectConstructor<? extends Map<K, V>> constructor;
 
     public Adapter(
-        Gson context,
-        Type keyType,
         TypeAdapter<K> keyTypeAdapter,
-        Type valueType,
         TypeAdapter<V> valueTypeAdapter,
         ObjectConstructor<? extends Map<K, V>> constructor) {
-      this.keyTypeAdapter = new TypeAdapterRuntimeTypeWrapper<>(context, keyTypeAdapter, keyType);
-      this.valueTypeAdapter =
-          new TypeAdapterRuntimeTypeWrapper<>(context, valueTypeAdapter, valueType);
+      this.keyTypeAdapter = keyTypeAdapter;
+      this.valueTypeAdapter = valueTypeAdapter;
       this.constructor = constructor;
     }
 

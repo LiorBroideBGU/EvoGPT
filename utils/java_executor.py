@@ -54,7 +54,6 @@ class JavaExecutor:
 
             if result.returncode != 0:
                 return False, result.stderr
-            print("Java Compilation Successful")
             return True, 'Compilation successful'
 
         except Exception as e:
@@ -103,6 +102,7 @@ class JavaExecutor:
             )
 
             if result.returncode != 0:
+                print(result.stdout)
                 return False, result.stdout
 
             return True, result.stdout

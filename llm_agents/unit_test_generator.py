@@ -82,6 +82,10 @@ class UnitTestGenerator(LLMAgent):
 
             else:
                 return
-
-        current_test_suite = remove_junit_tests(current_test_suite, output)
-        save_test_suite(current_test_suite, test_file_path)
+        for i in range(6):
+            success, output = executor.run_java()
+            if not success:
+                current_test_suite = remove_junit_tests(current_test_suite, output)
+                save_test_suite(current_test_suite, test_file_path)
+            else:
+                break
