@@ -19,6 +19,22 @@ def get_type_string(type):
     dimensions = ''.join('[]' for _ in range(len(type.dimensions))) if hasattr(type, 'dimensions') else ''
     return f"{type_str}{dimensions}"
 
+def get_type_string(jtype):
+    if jtype is None:
+        return "void"
+    if hasattr(jtype, 'name'):
+        base = jtype.name
+    elif hasattr(jtype, 'name_prefix'):
+        base = jtype.name_prefix
+    else:
+        base = str(jtype)
+
+    # Strip generics like <T>
+    return base.split('<')[0]
+
+def normalize_signature(signature: str) -> str:
+    return signature.replace('java.lang.', '').replace('...', '[]').replace(' ', '')
+
 def get_public_method_signatures(java_code: str):
     try:
         tree = javalang.parse.parse(java_code)
@@ -36,10 +52,11 @@ def get_public_method_signatures(java_code: str):
                 for param in method.parameters:
                     param_type = get_type_string(param.type)
                     if param.varargs:
-                        param_type += "..."
+                        param_type += "[]"
                     params.append(param_type)
+
                 signature = f"{method.name}({', '.join(params)})"
-                public_method_signatures.append(signature)
+                public_method_signatures.append(normalize_signature(signature))
 
     return public_method_signatures
 

@@ -4,8 +4,6 @@ import os
 import re
 import javalang
 import shutil
-
-from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.java_executor import JavaExecutor
 
 
@@ -267,7 +265,16 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
         return set(re.findall(r'^import\s+.*?;', code, re.MULTILINE))
 
     def get_fields(code: str):
-        return re.findall(r'^\s*(private|protected|public)?\s+[\w<>\[\]]+\s+\w+\s*;', code, re.MULTILINE)
+        pattern = re.compile(
+            r'^\s*(private|protected|public)\s+[\w\<\>\[\]]+\s+\w+\s*;',
+            re.MULTILINE
+        )
+        fields = []
+        for match in pattern.finditer(code):
+            field_line = match.group(0).strip()
+            normalized = ' '.join(field_line.split())
+            fields.append(normalized)
+        return fields
 
     def extract_test_methods(code: str):
         method_pattern = re.compile(r'@Test\s+public\s+void\s+(\w+)\s*\([^)]*\)\s*\{', re.MULTILINE)
@@ -423,16 +430,12 @@ def delete_file(file_path):
     try:
         if os.path.isfile(file_path):  # Check if the file exists
             os.remove(file_path)  # Delete the file
-            print(f"File '{file_path}' deleted successfully.")
             return True
         elif os.path.isdir(file_path):
             shutil.rmtree(file_path)
-            print(f"Directory '{file_path}' deleted successfully.")
         else:
-            print(f"File '{file_path}' does not exist.")
             return False
     except Exception as e:
-        print(f"Error deleting file '{file_path}': {e}")
         return False
 
 

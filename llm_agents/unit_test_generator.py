@@ -2,6 +2,7 @@ from llm_agents.llm_agent import LLMAgent
 from langchain.schema import SystemMessage
 from utils.function_utils import *
 from utils.java_executor import *
+from utils.dataset_utils import *
 
 
 class UnitTestGenerator(LLMAgent):
@@ -38,8 +39,9 @@ class UnitTestGenerator(LLMAgent):
     def generation_repair_loop(self, java_file_path, project_id, iterations=4, thread_number=None):
         java_code = read_java_file_as_string(java_file_path)
         java_code = clean_java_code(java_code)
+        public_methods_list = get_public_method_signatures(java_code)
         java_class_name = java_file_path.split("\\")[-1].split(".")[0]
-        self.update_long_term_memory('session1', self.input_prompt.format(java_code))
+        self.update_long_term_memory('session1', self.input_prompt.format(public_methods_list,java_code))
         current_test_suite = self.get_unit_test_for_class(session_id='session1')
         test_file_path = os.path.abspath(
             os.path.join("results", "unit_tests", project_id, java_class_name, str(thread_number), 'javafiles',

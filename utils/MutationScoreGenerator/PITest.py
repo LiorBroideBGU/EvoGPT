@@ -34,7 +34,6 @@ class PITestRunner:
                 "--reportDir", self.report_dir
             ]
 
-            print("[PITest] Running command:\n", " ".join(cmd))
             result = subprocess.run(cmd, capture_output=True, text=True)
             return self.extract_pitest_metrics(result.stdout)
         except Exception as e:

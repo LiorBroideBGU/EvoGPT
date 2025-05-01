@@ -33,7 +33,7 @@ import java.util.Date;
  * @since 1.7.0
  */
 @FunctionalInterface
-public interface Converter<T, E extends Throwable> {
+public interface Converter<T, E extends Exception> {
     // See also Apache Commons Lang FailableFunction
 
     /**
@@ -71,7 +71,7 @@ public interface Converter<T, E extends Throwable> {
     /**
      * Creates a URL. Calls {@link URL#URL(String)}.
      */
-    Converter<URL, MalformedURLException> URL = java.net.URL::new;
+    Converter<URL, MalformedURLException> URL = URL::new;
 
     /**
      * Converts to a date using the format string Form "EEE MMM dd HH:mm:ss zzz yyyy".
@@ -81,9 +81,9 @@ public interface Converter<T, E extends Throwable> {
     /**
      * Applies the conversion function to the String argument.
      *
-     * @param str the String to convert
+     * @param string the String to convert
      * @return the Object from the conversion.
      * @throws E on error.
      */
-    T apply(String str) throws E;
+    T apply(String string) throws E;
 }

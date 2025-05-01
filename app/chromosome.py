@@ -1,7 +1,7 @@
 import os
 from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.MutationScoreGenerator.PITest import PITestRunner
-from llm_agents.mutation_assertion_generation_agent import MutationAssertionGenerator
+# from llm_agents.mutation_assertion_generation_agent import MutationAssertionGenerator
 from utils.function_utils import *
 import random
 import uuid
@@ -13,7 +13,7 @@ class Chromosome:
         :param path: The folder where this unit test lives (e.g. .../JsonArray/3).
         """
         self.path = path
-        self.java_file_name = path.split('\\')[-3] if thread_id is not None else path.split('\\')[-5]
+        self.java_file_name = path.split('\\')[-3] if thread_id is not None else path.split('\\')[-2]
         self.thread_id = thread_id
         self.test_file_path = self._locate_test_file()
         self.code_length = len(read_java_file_as_string(self.test_file_path))
@@ -53,9 +53,10 @@ class Chromosome:
         Based on line coverage, branch coverage and mutation score.
         """
         self._fix_runtime_errors()
-        jcc = JavaCodeCoverage(f"{self.path}", self.java_file_name, "gson", self.thread_id)
-        mutation_scorer = PITestRunner(project_name="gson",
-        class_name=f"com.google.gson.{self.java_file_name}",  # fully qualified class name
+        jcc = JavaCodeCoverage(f"{self.path}", self.java_file_name, "commons-csv", self.thread_id)
+        print(self.java_file_name)
+        mutation_scorer = PITestRunner(project_name="commons-csv",
+        class_name=f"org.apache.commons.csv.{self.java_file_name}",  # fully qualified class name
         classfiles_dir=f"{os.path.dirname(self.path)}\\classfiles",
         source_dir=self.path,
         report_dir=f"{os.path.dirname(self.path)}\\pitest_report")

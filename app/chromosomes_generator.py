@@ -47,7 +47,6 @@ class ChromosomesGenerator:
         coverage_metrics, missed_branches = jcc.parse_jacoco_xml(
             rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\classfiles\coverage.xml'
         )
-        print(coverage_metrics, missed_branches)
 
         # Enhancements
         test_enhancements = CoverageEnhancementAgent(
@@ -130,7 +129,7 @@ class ChromosomesGenerator:
             chromosome.compute_fitness()
 
     def evolution_generation(self, max_time=180):
-        self.compute_gen_fitness()
+        # self.compute_gen_fitness()
         elites = list([])
         start_time = time.time()
         iterations = 0
@@ -139,51 +138,59 @@ class ChromosomesGenerator:
                 parent1, parent2 = self.select_two_parents()
                 print(parent1.test_file_path)
                 print(parent2.test_file_path)
-                if random.random() < self.crossover_probability:
-                    offspring1_code, offspring2_code = parent1.crossover(parent2)
-                else:
-                    offspring1_code, offspring2_code = read_java_file_as_string(parent1.test_file_path), read_java_file_as_string(parent2.test_file_path)
-                self.save_chromosome_code(iterations, offspring1_code, offspring2_code)
-                base_path = os.path.join("results", "unit_tests", self.project_name, self.class_name,"offsprings", str(iterations))
-                offspring1 = self.create_chromosome(os.path.join(base_path, "offspring1", "javafiles"))
-                offspring2 = self.create_chromosome(os.path.join(base_path, "offspring2", "javafiles"))
-                offspring1.compute_fitness()
-                offspring2.compute_fitness()
-                #TODO: Apply mutation to the offsprings here!
-                """
-                PUT MUTATION HERE
-                """
-                best_parent_fitness = max(parent1.fitness_score, parent2.fitness_score)
-                best_offspring_fitness = max(offspring1.fitness_score, offspring2.fitness_score)
+                try:
+                    if random.random() < self.crossover_probability:
+                        offspring1_code, offspring2_code = parent1.crossover(parent2)
+                    else:
+                        offspring1_code, offspring2_code = read_java_file_as_string(parent1.test_file_path), read_java_file_as_string(parent2.test_file_path)
+                    self.save_chromosome_code(iterations, offspring1_code, offspring2_code)
+                    base_path = os.path.join("results", "unit_tests", self.project_name, self.class_name,"offsprings", str(iterations))
+                    offspring1 = self.create_chromosome(os.path.join(base_path, "offspring1", "javafiles"))
+                    offspring2 = self.create_chromosome(os.path.join(base_path, "offspring2", "javafiles"))
+                    offspring1.compute_fitness()
+                    offspring2.compute_fitness()
+                    #TODO: Apply mutation to the offsprings here!
+                    """
+                    PUT MUTATION HERE
+                    """
+                    best_parent_fitness = max(parent1.fitness_score, parent2.fitness_score)
+                    best_offspring_fitness = max(offspring1.fitness_score, offspring2.fitness_score)
 
-                parents_code_length = parent1.code_length + parent2.code_length
-                offspring_code_length = offspring1.code_length + offspring2.code_length
-                tb = max(self.chromosomes, key=lambda c: c.fitness_score)
-                if best_offspring_fitness > best_parent_fitness or (best_offspring_fitness == best_parent_fitness and offspring_code_length <= parents_code_length):
-                    offsprings = [offspring1, offspring2]
-                    for offspring in offsprings:
-                        if offspring.code_length <= 2 * tb.code_length:
-                            elites.append(offspring)
-                        else:
-                            elites.append(random.choice([parent1, parent2]))
-                else:
+                    parents_code_length = parent1.code_length + parent2.code_length
+                    offspring_code_length = offspring1.code_length + offspring2.code_length
+                    tb = max(self.chromosomes, key=lambda c: c.fitness_score)
+                    if best_offspring_fitness > best_parent_fitness or (best_offspring_fitness == best_parent_fitness and offspring_code_length <= parents_code_length):
+                        offsprings = [offspring1, offspring2]
+                        for offspring in offsprings:
+                            if offspring.code_length <= 2 * tb.code_length:
+                                elites.append(offspring)
+                            else:
+                                elites.append(random.choice([parent1, parent2]))
+                    else:
+                        elites.append(parent1)
+                        elites.append(parent2)
+                    if time.time() - start_time > max_time:
+                        break
+                    iterations += 1
+                except:
                     elites.append(parent1)
                     elites.append(parent2)
-                if time.time() - start_time > max_time:
-                    break
-                iterations += 1
-
             self.chromosomes = elites
             elites = []
         return max(self.chromosomes, key=lambda c: c.fitness_score)
 
     def generate_final_unit_test(self,n_chromosomes=30, max_time=180):
-        temperatures = [random.random() for _ in range(n_chromosomes)]
+        temperatures = [random.uniform(0.3,0.8) for _ in range(n_chromosomes)]
         threads = []
+        semaphore = threading.Semaphore(10)
+
+        def wrapped_generation(i, temp):
+            with semaphore:
+                self.threaded_generation(i, temp)
 
         for i, temp in enumerate(temperatures):
             i = i + 1
-            t = threading.Thread(target=self.threaded_generation, args=(i, temp))
+            t = threading.Thread(target=wrapped_generation, args=(i, temp))
             t.start()
             threads.append(t)
 
@@ -196,6 +203,7 @@ class ChromosomesGenerator:
         for chromosome in self.chromosomes:
             print(chromosome)
         print(f"BEST CHROMOSOME: {final}")
+        print(f"Line coverage: {final.line_coverage}, Branch coverage: {final.branch_coverage}, Mutation Score: {final.mutation_score}, Test Strength: {final.tests_strength}")
         #TODO: Delete all unit tests but this one.
 
         # TODO: Delete all unit tests but this one.

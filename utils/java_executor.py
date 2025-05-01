@@ -51,7 +51,6 @@ class JavaExecutor:
                 capture_output=True,
                 text=True
             )
-
             if result.returncode != 0:
                 return False, result.stderr
             return True, 'Compilation successful'
@@ -84,7 +83,6 @@ class JavaExecutor:
                 capture_output=True,
                 text=True
             )
-
             if compile_result.returncode != 0:
                 return False, f"Compilation Error:\n{compile_result.stderr}"
 
@@ -100,7 +98,6 @@ class JavaExecutor:
                 capture_output=True,
                 text=True
             )
-
             if result.returncode != 0:
                 print(result.stdout)
                 return False, result.stdout

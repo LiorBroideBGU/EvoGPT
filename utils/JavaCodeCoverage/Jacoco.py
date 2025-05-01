@@ -2,6 +2,26 @@ import subprocess
 import os
 import xml.etree.ElementTree as ET
 from config.config import JAVA_BIN, JAVAC_BIN
+from utils.dataset_utils import *
+
+
+
+def get_public_method_line_ranges(java_code: str):
+    tree = javalang.parse.parse(java_code)
+    ranges = []
+    for _, class_decl in tree.filter(ClassDeclaration):
+        for method in class_decl.methods:
+            if 'public' in method.modifiers and method.body:
+                try:
+                    start = method.position.line
+                    end = max(
+                        [stmt.position.line for stmt in method.body if stmt and stmt.position]
+                        or [start + 1]
+                    )
+                    ranges.append((start, end))
+                except Exception:
+                    continue
+    return ranges
 
 class JavaCodeCoverage:
     def __init__(self, java_files_dir, test_class, project_name, thread_id=None):
@@ -170,6 +190,10 @@ class JavaCodeCoverage:
         coverage_results = {}
         missed_branches = {}
 
+        # Gather public method signatures
+        public_method_signatures = set(get_public_method_signatures(java_source_code))
+        public_ranges = get_public_method_line_ranges(java_source_code)
+
         for package in root.findall("package"):
             for class_element in package.findall("class"):
                 class_name = class_element.get("name")
@@ -177,17 +201,19 @@ class JavaCodeCoverage:
                     continue
 
                 coverage_results[class_name] = {}
-
                 for method in class_element.findall("method"):
                     method_name = method.get("name")
                     desc = method.get("desc", "")
                     param_types = self.parse_jvm_descriptor(desc)
                     full_signature = f"{method_name}({', '.join(param_types)})"
+                    normalized_signature = normalize_signature(full_signature)
 
-                    line_number = int(method.get("line", "-1"))
+                    if normalized_signature not in public_method_signatures:
+                        continue  # Skip non-public methods
 
-                    branch_counter = method.find("counter[@type='BRANCH']")
                     line_counter = method.find("counter[@type='LINE']")
+                    branch_counter = method.find("counter[@type='BRANCH']")
+
                     if line_counter is not None:
                         lines_missed = int(line_counter.get("missed", "0"))
                         lines_covered = int(line_counter.get("covered", "0"))
@@ -195,6 +221,7 @@ class JavaCodeCoverage:
                         line_coverage = (lines_covered / total_lines) * 100 if total_lines > 0 else 0
                     else:
                         line_coverage = 0
+
                     if branch_counter is not None:
                         branches_missed = int(branch_counter.get("missed", "0"))
                         branches_covered = int(branch_counter.get("covered", "0"))
@@ -213,7 +240,8 @@ class JavaCodeCoverage:
                     line_number = int(line.get("nr"))
                     missed_branches_count = int(line.get("mb", "0"))
                     if missed_branches_count > 0:
-                        missed_branches[line_number] = missed_branches_count
+                        if any(start <= line_number <= end for start, end in public_ranges):
+                            missed_branches[line_number] = missed_branches_count
 
         java_lines = java_source_code.split("\n")
         missed_branch_lines = {
