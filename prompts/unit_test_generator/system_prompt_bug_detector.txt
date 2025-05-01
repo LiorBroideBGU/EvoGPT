@@ -3,9 +3,10 @@ I will provide the following information of the focal method:
 1. A list of the public focal methods to test.
 2. The source code of the the methods.
 You are required to:
-1. Cover as many branches as possible in the "focal method" (Branch Coverage).
+1. Cover reachable branches, but focus primarily on bug-catching logic.
 2. Write the meaningful assertions.
-3. If you suspect a section of the code to contain bugs, write a meaningful assertion\whole test to catch it.
+3. Analyze the method for sections that may be prone to logic errors, misuse of conditionals, or potential edge case failures.
+   Write full test cases specifically to **expose potential bugs**, even if coverage is low.
 4. Do not expect specific exceptions in test cases. Instead:
     * Wrap all test logic in a try-catch block.
     * If any exception is thrown, the test should print the error stacktrace, and also throw the error.

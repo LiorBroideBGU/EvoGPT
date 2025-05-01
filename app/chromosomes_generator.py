@@ -3,6 +3,7 @@ from llm_agents.unit_test_generator import UnitTestGenerator
 from llm_agents.coverage_enhancement_agent import CoverageEnhancementAgent
 from utils.function_utils import extract_project_name
 from utils.java_executor import JavaExecutor
+from copy import deepcopy
 from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.function_utils import *
 # from sbst_agents.mutation_assertion_generator import MutationAssertionGenerator
@@ -11,6 +12,7 @@ import threading
 from app.chromosome import Chromosome
 import random
 import time
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -25,64 +27,65 @@ class ChromosomesGenerator:
         self.lock = threading.Lock()
         self.crossover_probability = 0.8
 
-    def threaded_generation(self,thread_number, temperature):
-        print(f"Thread-{thread_number} starting with temperature={temperature}")
+    async def threaded_generation(self,thread_number, temperature):
+        try:
+            print(f"Thread-{thread_number} starting with temperature={temperature}")
 
-        unit_test_generator = UnitTestGenerator(api_key=API_KEY, model=MODEL, temperature=temperature)
-        java_file_path = self.source_code_path
-        project_id = self.project_name
+            unit_test_generator = UnitTestGenerator(api_key=API_KEY, model=MODEL, temperature=temperature)
+            java_file_path = self.source_code_path
+            project_id = self.project_name
 
-        # Generation + Repair loop (initial)
-        unit_test_generator.generation_repair_loop(java_file_path=java_file_path, project_id=project_id,
-                                                   thread_number=thread_number)
+            # Generation + Repair loop (initial)
+            await unit_test_generator.generation_repair_loop(java_file_path=java_file_path, project_id=project_id,
+                                                       thread_number=thread_number)
 
-        # Coverage
-        jcc = JavaCodeCoverage(
-            f'C:\\Users\\liorb\\PycharmProjects\\EvoChat\\results\\unit_tests\\{self.project_name}\\{self.class_name}\\{str(thread_number)}\\javafiles',
-            self.class_name,
-            self.project_name,
-            thread_id=thread_number
-        )
-        jcc.generate_coverage_report()
-        coverage_metrics, missed_branches = jcc.parse_jacoco_xml(
-            rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\classfiles\coverage.xml'
-        )
+            # Coverage
+            jcc = JavaCodeCoverage(
+                f'C:\\Users\\liorb\\PycharmProjects\\EvoChat\\results\\unit_tests\\{self.project_name}\\{self.class_name}\\{str(thread_number)}\\javafiles',
+                self.class_name,
+                self.project_name,
+                thread_id=thread_number
+            )
+            jcc.generate_coverage_report()
+            coverage_metrics, missed_branches = jcc.parse_jacoco_xml(
+                rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\classfiles\coverage.xml'
+            )
 
-        # Enhancements
-        test_enhancements = CoverageEnhancementAgent(
-            api_key=API_KEY,
-            model=MODEL,
-            temperature=temperature,
-            java_file_path=java_file_path
-        )
-        test_enhancements.generation_repair_loop(coverage_metrics, missed_branches, thread_number=thread_number)
+            # Enhancements
+            test_enhancements = CoverageEnhancementAgent(
+                api_key=API_KEY,
+                model=MODEL,
+                temperature=temperature,
+                java_file_path=java_file_path
+            )
+            await test_enhancements.generation_repair_loop(coverage_metrics, missed_branches, thread_number=thread_number)
+            # Paths with thread-specific test names
+            base_dir = rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\javafiles'
+            base_cls_dir = rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\classfiles'
+            test1_path = fr'{base_dir}\{self.class_name}Test.java'
+            test2_path = fr'{base_dir}\{self.class_name}EnhancedTest.java'
 
-        # Paths with thread-specific test names
-        base_dir = rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\javafiles'
-        base_cls_dir = rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\classfiles'
-        test1_path = fr'{base_dir}\{self.class_name}Test.java'
-        test2_path = fr'{base_dir}\{self.class_name}EnhancedTest.java'
+            first_unit_test = read_java_file_as_string(test1_path)
+            enhanced_unit_test = read_java_file_as_string(test2_path)
+            final_unit_test = merge_java_unit_tests(first_unit_test, enhanced_unit_test, f'{self.class_name}Test')
+            # Cleanup
+            delete_file(test1_path)
+            delete_file(test2_path)
+            delete_file(fr'{base_cls_dir}')
 
-        first_unit_test = read_java_file_as_string(test1_path)
-        enhanced_unit_test = read_java_file_as_string(test2_path)
-        final_unit_test = merge_java_unit_tests(first_unit_test, enhanced_unit_test, f'{self.class_name}Test')
+            # Save final merged test
+            merged_path = fr'{base_dir}\{self.class_name}Test.java'
+            save_test_suite(final_unit_test, merged_path)
+            chromosome_path = rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\javafiles'
+            with self.lock:
+                chromosome = Chromosome(path=chromosome_path, thread_id=thread_number)
+                chromosome.compute_fitness()
 
-        # Cleanup
-        delete_file(test1_path)
-        delete_file(test2_path)
-        delete_file(fr'{base_cls_dir}')
-
-        # Save final merged test
-        merged_path = fr'{base_dir}\{self.class_name}Test.java'
-        save_test_suite(final_unit_test, merged_path)
-        chromosome_path = rf'C:\Users\liorb\PycharmProjects\EvoChat\results\unit_tests\{self.project_name}\{self.class_name}\{str(thread_number)}\javafiles'
-        with self.lock:
-            chromosome = Chromosome(path=chromosome_path, thread_id=thread_number)
-            chromosome.compute_fitness()
-
-        with self.lock:
-            self.chromosomes.append(chromosome)
-        print(f"Thread-{thread_number} done, saved final test at: {merged_path}")
+            with self.lock:
+                self.chromosomes.append(chromosome)
+            print(f"Agent-{thread_number} done, saved final test at: {merged_path}")
+        except Exception as e:
+            print(f"FAILED TO GENERATE CHROMOSOME! {e}")
 
 
 
@@ -128,16 +131,18 @@ class ChromosomesGenerator:
         for chromosome in self.chromosomes:
             chromosome.compute_fitness()
 
-    def evolution_generation(self, max_time=180):
+    async def evolution_generation(self, max_time=180):
         # self.compute_gen_fitness()
         elites = list([])
         start_time = time.time()
         iterations = 0
+        best_initial = max(self.chromosomes, key=lambda c: c.fitness_score)
         while time.time() - start_time < max_time:
             while len(elites) < len(self.chromosomes):
+                if max(self.chromosomes, key=lambda c: c.fitness_score).fitness_score == float(100):
+                    return max(self.chromosomes, key=lambda c: c.fitness_score)
                 parent1, parent2 = self.select_two_parents()
-                print(parent1.test_file_path)
-                print(parent2.test_file_path)
+
                 try:
                     if random.random() < self.crossover_probability:
                         offspring1_code, offspring2_code = parent1.crossover(parent2)
@@ -147,12 +152,20 @@ class ChromosomesGenerator:
                     base_path = os.path.join("results", "unit_tests", self.project_name, self.class_name,"offsprings", str(iterations))
                     offspring1 = self.create_chromosome(os.path.join(base_path, "offspring1", "javafiles"))
                     offspring2 = self.create_chromosome(os.path.join(base_path, "offspring2", "javafiles"))
+
+                    off_1_mag = MutationAssertionGenerator(api_key=API_KEY,
+                                                           model=MODEL,
+                                                           temperature=TEMPERATURE,
+                                                           unit_test_path=os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}Test.java"),
+                                                           source_code_path=os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}.java"))
+                    off_2_mag = MutationAssertionGenerator(api_key=API_KEY,
+                                                           model=MODEL,
+                                                           temperature=TEMPERATURE,
+                                                           unit_test_path=os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}Test.java"),
+                                                           source_code_path=os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}.java"))
+                    await asyncio.gather(off_2_mag.assertion_generation(),off_1_mag.assertion_generation())
                     offspring1.compute_fitness()
                     offspring2.compute_fitness()
-                    #TODO: Apply mutation to the offsprings here!
-                    """
-                    PUT MUTATION HERE
-                    """
                     best_parent_fitness = max(parent1.fitness_score, parent2.fitness_score)
                     best_offspring_fitness = max(offspring1.fitness_score, offspring2.fitness_score)
 
@@ -164,47 +177,47 @@ class ChromosomesGenerator:
                         for offspring in offsprings:
                             if offspring.code_length <= 2 * tb.code_length:
                                 elites.append(offspring)
+                                if offspring.fitness_score == 100:
+                                    return offspring
                             else:
                                 elites.append(random.choice([parent1, parent2]))
                     else:
                         elites.append(parent1)
                         elites.append(parent2)
                     if time.time() - start_time > max_time:
+                        self.chromosomes.extend(elites)
+                        elites = deepcopy(self.chromosomes)
                         break
                     iterations += 1
-                except:
+                except Exception as e:
                     elites.append(parent1)
                     elites.append(parent2)
             self.chromosomes = elites
             elites = []
+        if best_initial not in self.chromosomes:
+            self.chromosomes.append(best_initial)
         return max(self.chromosomes, key=lambda c: c.fitness_score)
 
-    def generate_final_unit_test(self,n_chromosomes=30, max_time=180):
-        temperatures = [random.uniform(0.3,0.8) for _ in range(n_chromosomes)]
-        threads = []
-        semaphore = threading.Semaphore(10)
+    async def generate_final_unit_test(self,n_chromosomes=30, max_time=180):
+        base_temps = [0.3, 0.4, 0.5, 0.6, 0.8]
 
-        def wrapped_generation(i, temp):
-            with semaphore:
-                self.threaded_generation(i, temp)
+        # Repeat each temperature evenly
+        repeats_per_temp = n_chromosomes // len(base_temps)
+        temperatures = base_temps * repeats_per_temp
+        tasks = [
+            self.threaded_generation(i + 1, temp)
+            for i, temp in enumerate(temperatures)
+        ]
+        await asyncio.gather(*tasks)
+        print("All async agents finished.")
+        print(self.chromosomes)
+        final = await self.evolution_generation(max_time=max_time)
 
-        for i, temp in enumerate(temperatures):
-            i = i + 1
-            t = threading.Thread(target=wrapped_generation, args=(i, temp))
-            t.start()
-            threads.append(t)
-
-        for t in threads:
-            t.join()
-
-        print("All threads finished.")
-
-        final = self.evolution_generation(max_time=max_time)
         for chromosome in self.chromosomes:
             print(chromosome)
         print(f"BEST CHROMOSOME: {final}")
-        print(f"Line coverage: {final.line_coverage}, Branch coverage: {final.branch_coverage}, Mutation Score: {final.mutation_score}, Test Strength: {final.tests_strength}")
-        #TODO: Delete all unit tests but this one.
+        print(
+            f"Line coverage: {final.line_coverage}, Branch coverage: {final.branch_coverage}, Mutation Score: {final.mutation_score}, Test Strength: {final.tests_strength}")
 
         # TODO: Delete all unit tests but this one.
 

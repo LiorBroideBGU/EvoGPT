@@ -8,53 +8,7 @@ from utils.java_executor import *
 import random
 from config.config import *
 
-## Mutation mapping
-MUTATION_MAPPING = {
-    # Boolean mutations
-    "true": ["false"],
-    "false": ["true"],
-    "&&": ["||"],
-    "||": ["&&"],
-    "!": [""],  # Remove negation
-    "==": ["!="],
-    "!=": ["=="],
 
-    # Arithmetic mutations
-    "+": ["-", "*", "/"],
-    "-": ["+", "*", "/"],
-    "*": ["/", "+", "-"],
-    "/": ["*", "+", "-"],
-
-    # Increment/decrement mutations
-    "++": ["--"],
-    "--": ["++"],
-
-    # Relational operator mutations
-    "<": ["<=", ">"],
-    "<=": ["<", ">="],
-    ">": [">=", "<"],
-    ">=": [">", "<="],
-
-    # Return statement mutations
-    "return true": ["return false"],
-    "return false": ["return true"],
-    "return 0": ["return 1", "return -1"],
-    "return 1": ["return 0", "return -1"],
-
-    # Assignment mutations
-    "=": ["+=", "-=", "*=", "/="],
-
-    # Loop boundary mutations
-    "for (": ["while ("],  # Convert loops
-    "while (": ["for ("],
-
-    # Null reference mutations
-    "null": ["new Object()"],
-
-    # Method call mutations
-    ".size()": [".size() - 1", ".size() + 1"],  # List size edge cases
-    ".get(": [".get(0)", ".get(1)"],  # List index variations
-}
 
 class MutationAssertionGenerator(LLMAgent):
     def __init__(self,api_key, model, temperature, unit_test_path, source_code_path):
@@ -64,105 +18,112 @@ class MutationAssertionGenerator(LLMAgent):
         self.unit_test_java_executor = JavaExecutor(java_file_path=unit_test_path)
         self.system_prompt = open(os.path.abspath(os.path.join("prompts", "mutation_assertion_generator", "system_prompt.txt")),'r').read()
         self.input_prompt = open(os.path.abspath(os.path.join("prompts", "mutation_assertion_generator", "input_prompt.txt")),'r').read()
-        self.mutation_mapping = MUTATION_MAPPING
 
+    def extract_test_methods(self, code: str):
+        method_pattern = re.compile(r'@Test\s+public\s+void\s+(\w+)\s*\([^)]*\)\s*\{', re.MULTILINE)
+        methods = []
+        for match in method_pattern.finditer(code):
+            start = match.start()
+            braces = 0
+            end = start
+            for i in range(start, len(code)):
+                if code[i] == '{':
+                    braces += 1
+                elif code[i] == '}':
+                    braces -= 1
+                    if braces == 0:
+                        end = i + 1
+                        break
+            methods.append(code[start:end])
+        return methods
 
+    def get_imports(self,code: str):
+        return set(re.findall(r'^import\s+.*?;', code, re.MULTILINE))
 
-    def exact_operator_regex(self,pattern):
-        """
-        Builds a regex pattern that ensures only the exact operator is matched, not a substring of a larger operator.
-        """
-        escaped = re.escape(pattern)
-        if pattern in ["++", "--", "==", "!=", "<=", ">="]:
-            return rf'(?<!\w){escaped}(?!\w)'
-        elif pattern in ["+", "-", "*", "/", "<", ">"]:
-            return rf'(?<![\w{escaped}]){escaped}(?![\w{escaped}=])'
-        elif pattern == "=":
-            return rf'(?<![!=<>]){escaped}(?![=])'
-        elif pattern == "!":
-            return rf'(?<![=!]){escaped}(?![=])'
-        else:
-            return escaped  # fallback
+    def get_fields(self,code: str):
+        pattern = re.compile(
+            r'^\s*(private|protected|public)\s+[\w\<\>\[\]]+\s+\w+\s*;',
+            re.MULTILINE
+        )
+        fields = []
+        for match in pattern.finditer(code):
+            field_line = match.group(0).strip()
+            normalized = ' '.join(field_line.split())
+            fields.append(normalized)
+        return fields
 
-    def get_assertion_injection(self, session_id: str) -> str:
+    async def get_model_response(self):
+        # Retrieve long-term memory specific to the session
+        long_term_memory = self.get_long_term_memory('session1')
 
         # Compose the prompt including the system message, long-term memory, and user input
-        system_message =SystemMessage(content=f"{self.system_prompt}")
+        system_message = SystemMessage(content=f"{self.system_prompt}")
 
         # Get or create the message history for the session
-        history = self.get_chat_history(session_id)
+        history = self.get_chat_history('session1')
 
         # Add system message and user prompt to the conversation
         messages = [system_message] + history.messages
-        response = self.chat_model(messages)
+        response =  self.chat_model(messages)
 
         # Update the session chat history and long-term memory
-        history.add_assistant_message(response.content)
+        await history.add_assistant_message(response.content)
 
         return response.content
 
-    def apply_mutation(self, java_function):
-        """
-        Applies a single random mutation from the mutation mapping to a Java function.
+    def replace_test_method(self,original_code: str, new_method_code: str) -> str:    # Extract method name from new method
+        method_name_match = re.search(r'@Test\s+public\s+void\s+(\w+)\s*\(', new_method_code)
+        if not method_name_match:
+            raise ValueError("Could not extract method name from new test method.")
 
-        Args:
-            java_function (str): The original Java function as a string.
+        method_name = method_name_match.group(1)
 
-        Returns:
-            tuple: (mutated_function, mutation_description)
-        """
-        mutated_function = java_function  # Keep original function structure
-        applied_mutation = None
+        # Find the start and end indices of the old method in the original code
+        method_pattern = re.compile(
+            rf'@Test\s+public\s+void\s+{method_name}\s*\([^)]*\)\s*\{{',
+            re.MULTILINE
+        )
+        match = method_pattern.search(original_code)
+        if not match:
+            raise ValueError(f"No method named '{method_name}' found in original code.")
 
-        # Shuffle mutation keys to apply a random mutation
-        mutation_keys = list(self.mutation_mapping.keys())
-        random.shuffle(mutation_keys)  # Ensures random selection
+        start_index = match.start()
 
-        for pattern in mutation_keys:
-            regex_pattern = self.exact_operator_regex(pattern)
-            if re.search(regex_pattern, mutated_function):
-                possible_mutations = self.mutation_mapping[pattern]
-                chosen_mutation = random.choice(possible_mutations)
-                mutated_function, num_subs = re.subn(regex_pattern, chosen_mutation, mutated_function, count=1)
-                if num_subs > 0:
-                    applied_mutation = f"Replaced `{pattern}` with `{chosen_mutation}`"
+        # Now find where this method ends (match balanced braces)
+        brace_count = 0
+        end_index = start_index
+        for i in range(start_index, len(original_code)):
+            if original_code[i] == '{':
+                brace_count += 1
+            elif original_code[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end_index = i + 1
                     break
 
-        return mutated_function, applied_mutation
+        # Slice and replace only that method
+        updated_code = original_code[:start_index] + new_method_code.strip() + original_code[end_index:]
+        return updated_code
 
-    def mutation_assertion_generation(self):
-        source_code = read_java_file_as_string(self.source_code_path)
-        unit_test = read_java_file_as_string(self.unit_test_path)
-        source_code_functions = extract_public_methods(source_code)
-        num_functions = len(source_code_functions)
+    async def assertion_generation(self):
+        old_java_source_code = read_java_file_as_string(self.source_code_path)
+        old_unit_test = read_java_file_as_string(self.unit_test_path)
+        test_methods = self.extract_test_methods(old_unit_test)
+        num_of_test_methods = len(test_methods)
+        for test_method in test_methods:
+            old_unit_test = read_java_file_as_string(self.unit_test_path)
+            if random.random() <= 1/num_of_test_methods:
+                fields = self.get_fields(old_java_source_code)
+                imports = self.get_imports(old_java_source_code)
+                self.update_long_term_memory('session1', self.input_prompt.format(test_method, old_java_source_code, f"Fields: {fields}, Imports: {imports}"))
+                new_test_method =  await self.get_model_response()
+                new_unit_test = self.replace_test_method(old_unit_test, new_test_method)
+                save_test_suite(new_unit_test, self.unit_test_path)
+                result, stacktrace = self.unit_test_java_executor.run_java()
+                if not result:
+                    save_test_suite(old_unit_test, self.unit_test_path)
 
-        for function_name in source_code_functions:
-            # Determine if we should mutate this function (1/|T| chance)
-            if random.random() > 1 / num_functions:
-                continue  # Skip mutation for this function
 
-            function = extract_java_function(source_code, function_name)
-            mutated_function, applied_mutation = self.apply_mutation(function)
 
-            if not applied_mutation:
-                continue  # No mutation was actually applied
-
-            modified_source_code = replace_java_function(source_code, function_name, mutated_function)
-            save_test_suite(modified_source_code, self.source_code_path)
-            executor = JavaExecutor(java_file_path=self.source_code_path)
-            executor.compile_java()
-            test_ran, output = self.unit_test_java_executor.run_java()
-
-            while test_ran and applied_mutation:
-                self.update_long_term_memory('session1',
-                                             self.input_prompt.format(function, mutated_function, unit_test))
-                modified_test = self.get_assertion_injection('session1')
-                test_name = extract_public_methods(modified_test)[0]
-                modified_unit_test = replace_java_function(unit_test, test_name, modified_test)
-                save_test_suite(modified_unit_test, self.unit_test_path)
-                test_ran, output = self.unit_test_java_executor.run_java()
-
-            # Restore original source code after mutation round
-            save_test_suite(source_code, self.source_code_path)
 
 

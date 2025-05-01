@@ -12,13 +12,13 @@ class CoverageEnhancementAgent(UnitTestGenerator):
         self.syntax_error_prompt = open(os.path.abspath(os.path.join("prompts", "coverage_enhancement_generator", "syntax_error_prompt.txt")),'r').read()
         self.java_file_path = java_file_path
 
-    def generation_repair_loop(self,coverage_metrics, missed_branches, iterations=4, thread_number=None):
+    async def generation_repair_loop(self,coverage_metrics, missed_branches, iterations=4, thread_number=None):
         java_code = read_java_file_as_string(self.java_file_path)
         java_code = clean_java_code(java_code)
         project_id = extract_project_name(self.java_file_path).split("\\")[-1]
         java_class_name = self.java_file_path.split("\\")[-1].split(".")[0]
         self.update_long_term_memory('session1',self.input_prompt.format(java_code, coverage_metrics, missed_branches))
-        current_test_suite = self.get_unit_test_for_class(session_id='session1')
+        current_test_suite = await self.get_unit_test_for_class(session_id='session1')
         test_file_path = os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,str(thread_number),'javafiles', f"{java_class_name}EnhancedTest.java")) if thread_number else os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,'javafiles', f"{java_class_name}EnhancedTest.java"))
         os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
         save_test_suite(current_test_suite, test_file_path)
@@ -31,21 +31,21 @@ class CoverageEnhancementAgent(UnitTestGenerator):
                 executor.check_java_code_syntax()
             except SyntaxError as e:
                 success, output = False, e
-                self.update_long_term_memory('session1',self.syntax_error_prompt.format(output))
-                current_test_suite = self.get_unit_test_for_class(session_id='session1')
+                await self.update_long_term_memory('session1',self.syntax_error_prompt.format(output))
+                current_test_suite = await self.get_unit_test_for_class(session_id='session1')
 
             success, output = executor.compile_java()
             if not success:
                 unimport_classes = get_class_imports(extract_project_name(self.java_file_path), output)
                 if unimport_classes:
                     current_test_suite = add_imports(unimport_classes, current_test_suite)
-                    self.edit_history_response('session1', current_test_suite)
+                    await self.edit_history_response('session1', current_test_suite)
                     save_test_suite(current_test_suite, test_file_path)
 
             success, output = executor.run_java()
             if not success:
                 self.update_long_term_memory('session1', self.repair_prompt.format(output))
-                current_test_suite = self.get_unit_test_for_class(session_id='session1')
+                current_test_suite = await self.get_unit_test_for_class(session_id='session1')
                 save_test_suite(current_test_suite, test_file_path)
 
             else:

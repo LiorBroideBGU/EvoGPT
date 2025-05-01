@@ -99,7 +99,6 @@ class JavaExecutor:
                 text=True
             )
             if result.returncode != 0:
-                print(result.stdout)
                 return False, result.stdout
 
             return True, result.stdout

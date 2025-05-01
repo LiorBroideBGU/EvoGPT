@@ -10,7 +10,7 @@ class ChatMessageHistory:
     def add_user_message(self, content: str):
         self.messages.append(HumanMessage(content=content))
 
-    def add_assistant_message(self, content: str):
+    async def add_assistant_message(self, content: str):
         self.messages.append(SystemMessage(content=content))
 
     def clear(self):

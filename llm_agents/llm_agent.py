@@ -35,5 +35,5 @@ class LLMAgent:
         """
         return ". ".join(self.long_term_memory.get(session_id, []))
 
-    def edit_history_response(self, session_id: str, fixed_response: str):
+    async def edit_history_response(self, session_id: str, fixed_response: str):
         self.chat_store[session_id].messages[1] = SystemMessage(content=fixed_response)
