@@ -1,0 +1,16 @@
+# LangChain dependencies for LLM integration
+langchain==0.1.20
+langchain-openai==0.1.8
+
+# Java code parsing
+javalang==0.13.0
+
+# Scientific computing (for specific utilities)
+numpy==1.26.4
+
+# Development and code quality
+pytest==8.2.2
+pytest-asyncio==0.23.7
+
+# Optional: Additional packages that might be useful for this type of project
+typing-extensions==4.12.2 
