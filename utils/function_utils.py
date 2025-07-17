@@ -581,3 +581,18 @@ def compile_code_from_path(code):
     """
     executor = JavaExecutor(code)
     executor.compile_java()
+
+
+def get_java_import_path(java_file_path: str) -> str:
+    """
+    Given a Java source file path, extract the correct import path.
+    Assumes the path contains a segment like 'src/main/java' before the package structure begins.
+    """
+    parts = os.path.normpath(java_file_path).split(os.sep)
+
+    try:
+        java_index = parts.index('java')
+        package_parts = parts[java_index + 1:-1]
+        return '.'.join(package_parts)
+    except ValueError:
+        raise ValueError("'java' directory not found in path. Ensure it's a standard src/main/java path.")

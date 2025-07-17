@@ -14,7 +14,7 @@ You are required to:
     * If any exception is thrown, the test should print the error stacktrace, and also throw the error.
 5. Include all necessary import statements at the beginning.
 6. Ensure the test compiles without errors.
-7. Write tests ONLY for the public methods in the I provided in the methods list.
+7. Write tests ONLY for the public methods in the provided methods list.
 8. *All helper classes or helper methods used within the test must be defined as static only. Do not declare non-static helper classes or methods.*
 9. Output the unit test code without markdown formatting (```java).
 No additional explanations required.

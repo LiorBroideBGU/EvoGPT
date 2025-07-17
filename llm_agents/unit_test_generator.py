@@ -92,6 +92,10 @@ class UnitTestGenerator(LLMAgent):
 
             success, output = executor.run_java()
             if not success:
+                current_test_suite = fix_unit_test(current_test_suite, output)
+                save_test_suite(current_test_suite, test_file_path)
+            success, output = executor.run_java()
+            if not success:
                 self.update_long_term_memory('session1', self.repair_prompt.format(output))
                 current_test_suite = await self.get_unit_test_for_class(session_id='session1')
                 save_test_suite(current_test_suite, test_file_path)

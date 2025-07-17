@@ -53,15 +53,15 @@ class Chromosome:
         Based on line coverage, branch coverage and mutation score.
         """
         self._fix_runtime_errors()
-        jcc = JavaCodeCoverage(f"{self.path}", self.java_file_name, "commons-cli", self.thread_id)
-        mutation_scorer = PITestRunner(project_name="commons-cli",
-        class_name=f"org.apache.commons.cli.{self.java_file_name}",  # fully qualified class name
+        jcc = JavaCodeCoverage(f"{self.path}", self.java_file_name, "gson", self.thread_id)
+        mutation_scorer = PITestRunner(project_name="gson",
+        class_name=f"com.google.gson.{self.java_file_name}",  # fully qualified class name
         classfiles_dir=f"{os.path.dirname(self.path)}\\classfiles",
         source_dir=self.path,
         report_dir=f"{os.path.dirname(self.path)}\\pitest_report")
         self.branch_coverage, self.line_coverage = jcc.get_average_coverage(thread_number=self.thread_id)
         self.mutation_score, self.tests_strength = mutation_scorer.run(self.java_file_name + 'Test')
-        self.fitness_score = 0.3 * self.branch_coverage + 0.2 * self.line_coverage + 0.4 * self.mutation_score + 0.1 * self.tests_strength
+        self.fitness_score = 0.3 * self.branch_coverage + 0.2 * self.line_coverage + 0.5 * self.mutation_score
 
     def crossover(self, other):
         """
