@@ -1,0 +1,33 @@
+{
+  "method": "AST-based (Jaccard similarity on semantic features)",
+  "intra_group_similarity": 0.5258713632713483,
+  "inter_group_similarity": 0.4759033876057972,
+  "diversity_ratio": 1.105389069114904,
+  "config_specific": {
+    "default": {
+      "mean_similarity": 0.5983713173955987,
+      "std_similarity": 0.1185539207459212,
+      "temp": 0.3
+    },
+    "assertion_heavy": {
+      "mean_similarity": 0.5946508860593257,
+      "std_similarity": 0.12265344870129817,
+      "temp": 0.4
+    },
+    "bug_detector": {
+      "mean_similarity": 0.4623739207369314,
+      "std_similarity": 0.1631519873340204,
+      "temp": 0.5
+    },
+    "edge_case_explorer": {
+      "mean_similarity": 0.501553749427978,
+      "std_similarity": 0.05016385959101382,
+      "temp": 0.6
+    },
+    "high_coverage": {
+      "mean_similarity": 0.47240694273690725,
+      "std_similarity": 0.04846293523513658,
+      "temp": 0.8
+    }
+  }
+}

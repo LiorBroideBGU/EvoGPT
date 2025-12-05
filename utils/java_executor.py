@@ -71,7 +71,7 @@ class JavaExecutor:
             source_code_name = self.java_file_name.replace("Test", "")
             build_path = os.path.join(os.path.dirname(self.java_file_path))
             build_path = os.path.dirname(build_path)
-            output_dir = f"{build_path}\\classfiles"
+            output_dir = os.path.join(build_path, "classfiles")
             os.makedirs(output_dir, exist_ok=True)
             compile_result = subprocess.run(
                 [

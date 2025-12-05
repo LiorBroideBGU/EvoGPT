@@ -19,18 +19,6 @@ def get_type_string(type):
     dimensions = ''.join('[]' for _ in range(len(type.dimensions))) if hasattr(type, 'dimensions') else ''
     return f"{type_str}{dimensions}"
 
-def get_type_string(jtype):
-    if jtype is None:
-        return "void"
-    if hasattr(jtype, 'name'):
-        base = jtype.name
-    elif hasattr(jtype, 'name_prefix'):
-        base = jtype.name_prefix
-    else:
-        base = str(jtype)
-
-    # Strip generics like <T>
-    return base.split('<')[0]
 
 def normalize_signature(signature: str) -> str:
     return signature.replace('java.lang.', '').replace('...', '[]').replace(' ', '')
@@ -196,9 +184,31 @@ def get_first_param(code: str, delete_param_gt3=True) -> Tuple[str, str]:
         return code, ""
 
 def fix_unit_test(java_unit_test: str, stacktrace: str) -> str:
+    """Fix unit test based on stacktrace information.
+    
+    Args:
+        java_unit_test: The Java unit test code as a string
+        stacktrace: The stacktrace from test execution
+        
+    Returns:
+        Fixed unit test code as a string
+    """
+    if not java_unit_test or not stacktrace:
+        return java_unit_test
+        
     test_lines = java_unit_test.split('\n')
     stacktrace_lines = stacktrace.split('\n')
-    locs = [i+1 for i, line in enumerate(test_lines) if any(assertion in line for assertion in ["assert", "=", "fail"]) and not line.strip().startswith("//")]
+    
+    # Find assertion lines more robustly
+    locs = [i+1 for i, line in enumerate(test_lines) 
+           if any(assertion in line for assertion in ["assert", "=", "fail"]) 
+           and not line.strip().startswith("//")
+           and line.strip()  # Skip empty lines
+          ]
+    
+    if not locs:
+        return java_unit_test  # No assertions found
+        
     lines = [test_lines[loc-1] for loc in locs]
 
     if 'AssertionError' in stacktrace or 'org.junit.ComparisonFailure' in stacktrace:
@@ -214,14 +224,29 @@ def fix_unit_test(java_unit_test: str, stacktrace: str) -> str:
             elif 'assertArrayEquals' in code:
                 fixed_code = code
             elif 'assertEquals' in code:
-                code, param1 = get_first_param(code)
-                regex_param1 = re.escape(param1)
-                param1_with_bracket = fr'\(\s*?{regex_param1}\s*?,'
-                result = re.search("expected:(.*) but was:(.*)", stacktrace)
-                if not result:
-                    return java_unit_test
-                expected = result.group(1).strip()
-                was = result.group(2).strip()
+                try:
+                    code, param1 = get_first_param(code)
+                    if not param1:  # If param extraction failed
+                        continue
+                        
+                    # More robust regex escaping for parameter matching
+                    regex_param1 = re.escape(param1.strip())
+                    param1_with_bracket = fr'\(\s*{regex_param1}\s*,'
+                    
+                    # Look for expected/actual pattern in stacktrace
+                    result = re.search(r"expected:(.+?)\s+but was:(.+?)(?:\s|$)", stacktrace, re.IGNORECASE)
+                    if not result:
+                        # Try alternative patterns
+                        alt_result = re.search(r"Expected\s*:(.+?)\s+Actual\s*:(.+?)(?:\s|$)", stacktrace, re.IGNORECASE)
+                        if not alt_result:
+                            continue  # Skip this assertion if no pattern found
+                        expected = alt_result.group(1).strip()
+                        was = alt_result.group(2).strip()
+                    else:
+                        expected = result.group(1).strip()
+                        was = result.group(2).strip()
+                except Exception:
+                    continue  # Skip if parameter extraction fails
 
                 def replace_brackets(string):
                     if string.startswith("<["):
@@ -241,37 +266,79 @@ def fix_unit_test(java_unit_test: str, stacktrace: str) -> str:
                 expected = replace_brackets(expected)
                 was = replace_brackets(was)
 
+                # Handle Unicode escaping more robustly
                 was = was.replace("\\u", "\\\\u")
-                value = re.search("<(.*)>", was)
-                if value:
-                    value = value.group(1)
-                    if was.startswith("java.lang.Integer") or was.startswith("java.lang.Boolean") or was.startswith("java.lang.Float") or was.startswith("java.lang.Double") or was.startswith("java.lang.Byte"):
+                
+                # Extract value from angle brackets with better regex
+                value_match = re.search(r"<([^>]*)>", was)
+                if value_match:
+                    value = value_match.group(1)
+                    # Handle different Java wrapper types
+                    java_type_patterns = [
+                        (r"java\.lang\.(Integer|Boolean|Float|Double|Byte)", lambda v: f"({v},"),
+                        (r"java\.lang\.String", lambda v: f'("{v}",'),
+                        (r"java\.lang\.Long", lambda v: f"({v}L,"),
+                    ]
+                    
+                    replace_str = None
+                    for pattern, formatter in java_type_patterns:
+                        if re.search(pattern, was):
+                            replace_str = formatter(value)
+                            break
+                    
+                    if not replace_str:
                         replace_str = fr"({value},"
-                    elif was.startswith("java.lang.String"):
-                        value = f'"{value}"'
-                        replace_str = fr"({value},"
-                    elif was.startswith("java.lang.Long"):
-                        replace_str = fr"({value}L,"
                 elif was.startswith("null"):
                     replace_str = fr"(null,"
                 else:
                     if expected and expected in param1:
-                        value = param1.replace(expected, was)
-                        replace_str = fr"({value},"
+                        # More robust string replacement
+                        try:
+                            value = param1.replace(expected, was)
+                            replace_str = fr"({re.escape(value)},"
+                        except Exception:
+                            replace_str = fr"({re.escape(was)},"
                     else:
-                        if not expected.isnumeric():
+                        # Better numeric detection
+                        if not (was.replace('.', '').replace('-', '').isdigit()):
                             was = f'"{was}"'
-                        replace_str = fr"({was},"
+                        replace_str = fr"({re.escape(was)},"
                 try:
-                    fixed_code = re.sub(param1_with_bracket, replace_str, code, count=1)
-                except Exception as e:
+                    # More robust regex substitution with better error handling
+                    if param1_with_bracket and replace_str:
+                        fixed_code = re.sub(param1_with_bracket, replace_str, code, count=1)
+                        # Verify the substitution worked
+                        if fixed_code == code and param1 in code:
+                            # Fallback: try simpler pattern
+                            simple_pattern = re.escape(param1) + r'\s*,'
+                            simple_replace = replace_str.replace('(', '').replace(',', ',')
+                            fixed_code = re.sub(simple_pattern, simple_replace, code, count=1)
+                    else:
+                        fixed_code = code
+                except Exception:
                     fixed_code = code
             else:
                 fixed_code = code
             test_lines[loc - 1] = fixed_code
     else:
-        error_type = stacktrace_lines[0].split(':')[0].strip()
-        target_loc = [loc for loc, line in zip(locs, lines) if 'public void' not in line][0]
+        # Extract error type more robustly
+        error_type = None
+        for line in stacktrace_lines[:5]:  # Check first few lines
+            if ':' in line and not line.startswith('\t'):
+                potential_error = line.split(':')[0].strip()
+                if potential_error and not potential_error.startswith('at '):
+                    error_type = potential_error
+                    break
+        
+        if not error_type:
+            return java_unit_test  # Could not determine error type
+            
+        # Find target location more safely
+        target_locs = [loc for loc, line in zip(locs, lines) if 'public void' not in line]
+        if not target_locs:
+            return java_unit_test  # No suitable target location found
+            
+        target_loc = target_locs[0]
         if modify_exception_type(test_lines, target_loc, error_type):
             pass
         else:
@@ -288,7 +355,17 @@ def fix_unit_test(java_unit_test: str, stacktrace: str) -> str:
                 dtype = f"{dtype}{'[]' * dimensions}"
                 boxed_dtype = f"{boxed_dtype}{'[]' * dimensions}" if boxed_dtype else None
                 def_statement = f'{boxed_dtype or dtype} {dname} = null;'
-                target_line = re.sub(f"{dtype}\\s*?{dname}".replace("[", "\\["), dname, target_line, count=1)
+                
+                # More robust regex for variable declaration replacement
+                # Properly escape special regex characters in dtype and dname
+                escaped_dtype = re.escape(dtype)
+                escaped_dname = re.escape(dname)
+                pattern = fr"\b{escaped_dtype}\s+{escaped_dname}\b"
+                try:
+                    target_line = re.sub(pattern, dname, target_line, count=1)
+                except Exception:
+                    # Fallback: simple replacement if regex fails
+                    target_line = target_line.replace(f"{dtype} {dname}", dname, 1)
 
             indent = len(target_line) - len(target_line.lstrip())
             indent_space = ' ' * indent
@@ -304,13 +381,32 @@ def fix_unit_test(java_unit_test: str, stacktrace: str) -> str:
             ]
             test_lines[target_loc - 1:target_loc] = new_lines
 
+        # Add import statement if needed
         if error_type in EXCEPTIONS_REQUIRING_IMPORT:
             import_statement = f"import {EXCEPTIONS_REQUIRING_IMPORT[error_type]};"
-            if import_statement not in java_unit_test:
+            full_import = EXCEPTIONS_REQUIRING_IMPORT[error_type]
+            
+            # Check if import already exists (exact match or wildcard)
+            import_exists = any(
+                import_statement in test_line or 
+                f"import {'.'.join(full_import.split('.')[:-1])}.*" in test_line
+                for test_line in test_lines
+            )
+            
+            if not import_exists:
+                # Find the right place to insert import
                 insert_index = 0
+                package_line_found = False
+                
                 for idx, line in enumerate(test_lines):
-                    if line.startswith('import'):
+                    if line.strip().startswith('package '):
+                        package_line_found = True
                         insert_index = idx + 1
+                    elif line.strip().startswith('import '):
+                        insert_index = idx + 1
+                    elif package_line_found and line.strip() and not line.strip().startswith('import '):
+                        break
+                        
                 test_lines.insert(insert_index, import_statement)
 
     return '\n'.join(test_lines)

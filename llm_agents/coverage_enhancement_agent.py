@@ -15,8 +15,9 @@ class CoverageEnhancementAgent(UnitTestGenerator):
     async def generation_repair_loop(self,coverage_metrics, missed_branches, iterations=4, thread_number=None):
         java_code = read_java_file_as_string(self.java_file_path)
         java_code = clean_java_code(java_code)
-        project_id = extract_project_name(self.java_file_path).split("\\")[-1]
-        java_class_name = self.java_file_path.split("\\")[-1].split(".")[0]
+        # Use os.path.basename for cross-platform compatibility
+        project_id = os.path.basename(extract_project_name(self.java_file_path))
+        java_class_name = os.path.basename(self.java_file_path).split(".")[0]
         self.update_long_term_memory('session1',self.input_prompt.format(java_code, coverage_metrics, missed_branches))
         current_test_suite = await self.get_unit_test_for_class(session_id='session1')
         test_file_path = os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,str(thread_number),'javafiles', f"{java_class_name}EnhancedTest.java")) if thread_number else os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,'javafiles', f"{java_class_name}EnhancedTest.java"))
@@ -31,8 +32,9 @@ class CoverageEnhancementAgent(UnitTestGenerator):
                 executor.check_java_code_syntax()
             except SyntaxError as e:
                 success, output = False, e
-                await self.update_long_term_memory('session1',self.syntax_error_prompt.format(output))
+                self.update_long_term_memory('session1',self.syntax_error_prompt.format(output))
                 current_test_suite = await self.get_unit_test_for_class(session_id='session1')
+                save_test_suite(current_test_suite, test_file_path)
 
             success, output = executor.compile_java()
             if not success:

@@ -1,6 +1,6 @@
 # LangChain dependencies for LLM integration
-langchain==0.1.20
-langchain-openai==0.1.8
+langchain==0.2.16
+langchain-openai==0.1.25
 
 # Java code parsing
 javalang==0.13.0

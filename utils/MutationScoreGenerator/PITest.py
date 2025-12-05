@@ -12,16 +12,34 @@ class PITestRunner:
 
         # Points to pitest-command-line.jar (not included in lib/jars)
         self.pitest_cli_jar = os.path.abspath("utils/MutationScoreGenerator/jars/pitest-command-line-1.19.0.jar")
+        
+        # Check if PITest jar exists
+        if not os.path.exists(self.pitest_cli_jar):
+            print(f"[PITest] WARNING: PITest jar not found at {self.pitest_cli_jar}")
+            print(f"[PITest] Mutation testing will be skipped. Download from: https://github.com/hcoles/pitest/releases")
+            self.pitest_available = False
+        else:
+            self.pitest_available = True
 
         self.jars_dir = os.path.abspath("lib/jars")
         self.classpath = self._build_classpath()
 
     def _build_classpath(self):
         all_jars = [os.path.join(self.jars_dir, f) for f in os.listdir(self.jars_dir) if f.endswith(".jar")]
-        all_jars.append(self.pitest_cli_jar)  # Add command-line CLI JAR
+        
+        # Add PITest jars
+        pitest_jars_dir = os.path.dirname(self.pitest_cli_jar)
+        if os.path.exists(pitest_jars_dir):
+            pitest_jars = [os.path.join(pitest_jars_dir, f) for f in os.listdir(pitest_jars_dir) if f.endswith(".jar")]
+            all_jars.extend(pitest_jars)
+        
         return os.pathsep.join(all_jars)
 
     def run(self, test_class):
+        # Skip if PITest jar is not available
+        if not self.pitest_available:
+            return 0.0, 0.0
+            
         try:
             cmd = [
                 JAVA_BIN,
@@ -31,14 +49,30 @@ class PITestRunner:
                 "--targetTests", test_class,
                 "--classPath", self.classfiles_dir,
                 "--sourceDirs", self.source_dir,
-                "--reportDir", self.report_dir
+                "--reportDir", self.report_dir,
+                "--threads", "2",  # Use 2 threads for faster execution
+                "--timeoutFactor", "1.25",  # Faster timeout (default is 1.25, we make it explicit)
+                "--timeoutConst", "3000",  # Max 3s per test
+                "--mutators", "DEFAULTS"  # Use standard mutators only
+                # Note: Keeping default output format to preserve console output for metric extraction
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            # Debug output
+            if result.returncode != 0:
+                print(f"[PITest] Command failed with return code {result.returncode}")
+                print(f"[PITest] STDERR: {result.stderr[:500]}")
+                
             return self.extract_pitest_metrics(result.stdout)
+        except subprocess.TimeoutExpired:
+            print(f"[PITest] Timeout after 120 seconds")
+            return 0.0, 0.0
         except Exception as e:
             print(f"[PITest] Error running mutation testing: {e}")
-            return False
+            import traceback
+            traceback.print_exc()
+            return 0.0, 0.0
 
 
     def extract_pitest_metrics(self,output_text):
@@ -51,7 +85,8 @@ class PITestRunner:
         killed_ratio_match = re.search(r">> Generated \d+ mutations Killed \d+ \((\d+)%\)", output_text)
         test_strength_match = re.search(r">> Mutations with no coverage \d+\. Test strength (\d+)%", output_text)
 
-        mutation_killed_ratio = int(killed_ratio_match.group(1)) if killed_ratio_match else None
-        test_strength_percentage = int(test_strength_match.group(1)) if test_strength_match else None
+        # Return 0.0 instead of None if regex doesn't match
+        mutation_killed_ratio = float(killed_ratio_match.group(1)) if killed_ratio_match else 0.0
+        test_strength_percentage = float(test_strength_match.group(1)) if test_strength_match else 0.0
 
         return mutation_killed_ratio, test_strength_percentage

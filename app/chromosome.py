@@ -5,6 +5,30 @@ from utils.MutationScoreGenerator.PITest import PITestRunner
 from utils.function_utils import *
 import random
 import uuid
+from config.config import PROJECT, CLASS_PATH
+
+def extract_package_from_path(java_file_path):
+    """
+    Extract package name from a Java file path.
+    E.g. /path/to/src/main/java/org/apache/commons/cli/Option.java -> org.apache.commons.cli
+    """
+    # Find the portion after 'src/main/java/' or 'src/'
+    normalized_path = java_file_path.replace('\\', '/')
+    
+    if '/src/main/java/' in normalized_path:
+        package_path = normalized_path.split('/src/main/java/')[1]
+    elif '/src/' in normalized_path:
+        package_path = normalized_path.split('/src/')[1]
+    else:
+        # Fallback: assume last few directories are the package
+        parts = normalized_path.split('/')
+        package_path = '/'.join(parts[-4:-1]) if len(parts) > 4 else '/'.join(parts[:-1])
+    
+    # Remove the filename and convert path separators to dots
+    package_parts = package_path.split('/')[:-1]  # Remove filename
+    package_name = '.'.join(package_parts)
+    
+    return package_name
 
 class Chromosome:
     def __init__(self, path: str, thread_id: int = None):
@@ -13,7 +37,26 @@ class Chromosome:
         :param path: The folder where this unit test lives (e.g. .../JsonArray/3).
         """
         self.path = path
-        self.java_file_name = path.split('\\')[-3] if thread_id is not None else path.split('\\')[-5]
+        # Use os.path.split for cross-platform path handling
+        path_parts = path.split(os.sep)
+        # Remove empty strings from path parts
+        path_parts = [p for p in path_parts if p]
+        
+        # Extract java file name from path
+        # Path structure: .../project/ClassName/ThreadNum/javafiles
+        # So: path_parts[-3] should be ClassName when thread_id is provided
+        try:
+            if thread_id is not None:
+                # Path: .../gson/JsonArray/7/javafiles -> JsonArray is at -3
+                self.java_file_name = path_parts[-3] if len(path_parts) >= 3 else path_parts[-2] if len(path_parts) >= 2 else path_parts[-1]
+            else:
+                # For offspring paths without thread_id
+                self.java_file_name = path_parts[-5] if len(path_parts) >= 5 else path_parts[-3] if len(path_parts) >= 3 else path_parts[-1]
+        except IndexError:
+            # Fallback: try to extract from path
+            print(f"Warning: Could not extract class name from path: {path}, parts: {path_parts}")
+            self.java_file_name = "UnknownClass"
+            
         self.thread_id = thread_id
         self.test_file_path = self._locate_test_file()
         self.code_length = len(read_java_file_as_string(self.test_file_path))
@@ -53,15 +96,24 @@ class Chromosome:
         Based on line coverage, branch coverage and mutation score.
         """
         self._fix_runtime_errors()
-        jcc = JavaCodeCoverage(f"{self.path}", self.java_file_name, "gson", self.thread_id)
-        mutation_scorer = PITestRunner(project_name="gson",
-        class_name=f"com.google.gson.{self.java_file_name}",  # fully qualified class name
-        classfiles_dir=f"{os.path.dirname(self.path)}\\classfiles",
-        source_dir=self.path,
-        report_dir=f"{os.path.dirname(self.path)}\\pitest_report")
+        
+        # Extract package name dynamically from CLASS_PATH
+        package_name = extract_package_from_path(CLASS_PATH)
+        fully_qualified_class = f"{package_name}.{self.java_file_name}"
+        
+        jcc = JavaCodeCoverage(f"{self.path}", self.java_file_name, PROJECT, self.thread_id)
+        mutation_scorer = PITestRunner(
+            project_name=PROJECT,
+            class_name=fully_qualified_class,  # fully qualified class name (e.g. org.apache.commons.cli.Option)
+            classfiles_dir=os.path.join(os.path.dirname(self.path), "classfiles"),
+            source_dir=self.path,
+            report_dir=os.path.join(os.path.dirname(self.path), "pitest_report")
+        )
         self.branch_coverage, self.line_coverage = jcc.get_average_coverage(thread_number=self.thread_id)
         self.mutation_score, self.tests_strength = mutation_scorer.run(self.java_file_name + 'Test')
+        
         self.fitness_score = 0.3 * self.branch_coverage + 0.2 * self.line_coverage + 0.5 * self.mutation_score
+        print(f"Chromosome {self.thread_id} fitness: {self.fitness_score:.3f} (branch={self.branch_coverage:.2f}, line={self.line_coverage:.2f}, mutation={self.mutation_score:.2f})")
 
     def crossover(self, other):
         """

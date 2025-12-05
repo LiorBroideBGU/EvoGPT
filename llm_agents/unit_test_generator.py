@@ -54,7 +54,8 @@ class UnitTestGenerator(LLMAgent):
         java_code = read_java_file_as_string(java_file_path)
         java_code = clean_java_code(java_code)
         public_methods_list = get_public_method_signatures(java_code)
-        java_class_name = java_file_path.split("\\")[-1].split(".")[0]
+        # Use os.path.basename for cross-platform compatibility
+        java_class_name = os.path.basename(java_file_path).split(".")[0]
         self.update_long_term_memory('session1', self.input_prompt.format(public_methods_list,java_code))
         current_test_suite = await self.get_unit_test_for_class(session_id='session1')
         test_file_path = os.path.abspath(
