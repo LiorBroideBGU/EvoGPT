@@ -1,0 +1,81 @@
+Project,Framework,LCCT,BCCT,MSCT
+commons-cli,EvoGPT,94,92,90
+commons-cli,EvoGPT + single config injector,94,92,91
+,EvoGPT + 5 config injectors,96,93,92
+commons-cli,TestART,87,87,86
+commons-cli,EvoSuite,90,89,80
+commons-codec,EvoGPT,93,90,83
+commons-codec,EvoGPT + single config injector,93,92,84
+,EvoGPT + 5 config injectors,96,93,85
+commons-codec,TestART,83,81,78
+commons-codec,EvoSuite,80,77,64
+commons-collections,EvoGPT,93,90,88
+commons-collections,EvoGPT + single config injector,94,91,90
+,EvoGPT + 5 config injectors,95,91,92
+commons-collections,TestART,81,83,79
+commons-collections,EvoSuite,79,74,68
+commons-compress,EvoGPT,81,80,78
+commons-compress,EvoGPT + single config injector,80,81,78
+,EvoGPT + 5 config injectors,84,83,80
+commons-compress,TestART,76,72,71
+commons-compress,EvoSuite,72,69,62
+commons-csv,EvoGPT,94,93,97
+commons-csv,EvoGPT + single config injector,94,94,96
+,EvoGPT + 5 config injectors,96,94,97
+commons-csv,TestART,81,79,77
+commons-csv,EvoSuite,78,65,58
+commons-jxpath,EvoGPT,87,83,80
+commons-jxpath,EvoGPT + single config injector,89,86,81
+,EvoGPT + 5 config injectors,90,87,82
+commons-jxpath,TestART,76,73,71
+commons-jxpath,EvoSuite,77,70,63
+commons-lang,EvoGPT,93,93,85
+commons-lang,EvoGPT + single config injector,92,94,84
+,EvoGPT + 5 config injectors,94,94,85
+commons-lang,TestART,88,84,83
+commons-lang,EvoSuite,90,87,75
+commons-math,EvoGPT,94,90,88
+commons-math,EvoGPT + single config injector,94,92,90
+,EvoGPT + 5 config injectors,96,93,91
+commons-math,TestART,86,81,80
+commons-math,EvoSuite,86,80,69
+gson,EvoGPT,94,90,86
+gson,EvoGPT + single config injector,93,90,82
+,EvoGPT + 5 config injectors,93,91,85
+gson,TestART,82,79,76
+gson,EvoSuite,80,80,62
+jackson-core,EvoGPT,85,87,80
+jackson-core,EvoGPT + single config injector,86,88,81
+,EvoGPT + 5 config injectors,89,90,83
+jackson-core,TestART,79,75,79
+jackson-core,EvoSuite,77,76,69
+jackson-databind,EvoGPT,84,81,80
+jackson-databind,EvoGPT + single config injector,84,80,80
+,EvoGPT + 5 config injectors,86,81,84
+jackson-databind,TestART,78,77,76
+jackson-databind,EvoSuite,78,75,65
+jackson-dataformat-xml,EvoGPT,91,88,86
+jackson-dataformat-xml,EvoGPT + single config injector,90,90,88
+,EvoGPT + 5 config injectors,90,91,89
+jackson-dataformat-xml,TestART,87,82,80
+jackson-dataformat-xml,EvoSuite,83,79,70
+jfreechart,EvoGPT,91,88,84
+jfreechart,EvoGPT + single config injector,90,90,86
+,EvoGPT + 5 config injectors,91,91,87
+jfreechart,TestART,87,84,81
+jfreechart,EvoSuite,87,85,76
+jsoup,EvoGPT,91,91,88
+jsoup,EvoGPT + single config injector,92,91,89
+,EvoGPT + 5 config injectors,92,92,92
+jsoup,TestART,85,82,80
+jsoup,EvoSuite,86,82,71
+mockito,EvoGPT,90,86,82
+mockito,EvoGPT + single config injector,90,86,82
+,EvoGPT + 5 config injectors,92,88,83
+mockito,TestART,87,83,78
+mockito,EvoSuite,88,84,73
+TOTAL,EvoGPT,90,88,85
+TOTAL,EvoGPT + single config injector,90,89,85
+,EvoGPT + 5 config injectors,92,90,87
+TOTAL,TestART,83,80,78
+TOTAL,EvoSuite,82,78,68

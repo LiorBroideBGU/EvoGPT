@@ -107,7 +107,7 @@ class JavaCodeCoverage:
         try:
             subprocess.run(
                 [
-                    "java", "-jar", os.path.abspath(os.path.join('lib', 'jars', 'jacococli.jar')),
+                    JAVA_BIN, "-jar", os.path.abspath(os.path.join('lib', 'jars', 'jacococli.jar')),
                     "report", os.path.join(output_dir, "coverage.exec"),  # .exec file to report on
                     "--classfiles",
                     os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles") if self.thread_id else os.path.join(os.path.dirname(self.java_files_dir), "classfiles"),

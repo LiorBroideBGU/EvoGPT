@@ -1,13 +1,12 @@
-
-API_KEY = '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'
-CLASS_PATH = '/Users/liorbr/PycharmProjects/EvoGPT/benchmarks/gson/src/main/java/com/google/gson/JsonArray.java'
+API_KEY = '<API_KEY>'
+CLASS_PATH = '<CLASS_PATH>'
 TEMPERATURE = 0.5
 MODEL = 'gpt-4o-mini'
-EVO_GENERATIONS = 25
-EVO_POPULATION = 25
-PROJECT = 'gson'
-JAVAC_BIN = '/opt/homebrew/opt/openjdk@11/bin/javac'
-JAVA_BIN = '/opt/homebrew/opt/openjdk@11/bin/java'
+EVO_GENERATIONS = 25 # Change to your desired number of generations
+EVO_POPULATION = 25 # Change to your desired population size
+PROJECT = '<PROJECT>'
+JAVAC_BIN = '<JAVAC_BIN>'
+JAVA_BIN = '<JAVA_BIN>'
 
 # Mutation Strategy Configuration
 # Options: 'llm' (uses MutationAssertionGenerator with LLM) or 'programmatic' (uses EvoSuite-style mutations)
@@ -22,3 +21,11 @@ PITEST_TIMEOUT = 60  # Reduced timeout for PITest (seconds)
 
 # Diversity Analysis Settings
 PRESERVE_INITIAL_POOL = True  # Keep all initial test suites for diversity analysis
+
+# CodaMosa-style LLM Injection Configuration
+# When evolutionary algorithm stagnates, inject LLM-generated test methods into best chromosome
+LLM_INJECTION_ENABLED = False         # Toggle to enable/disable injection feature
+STAGNATION_THRESHOLD = 5              # Iterations without fitness improvement before injection
+MIN_FITNESS_IMPROVEMENT = 0.5         # Minimum fitness delta to reset stagnation counter
+INJECTION_AGENTS_COUNT = 3            # Number of parallel agents per injection (1-5)
+MAX_INJECTIONS = 3                    # Maximum injection attempts per evolutionary run

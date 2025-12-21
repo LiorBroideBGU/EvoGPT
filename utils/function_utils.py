@@ -596,3 +596,248 @@ def get_java_import_path(java_file_path: str) -> str:
         return '.'.join(package_parts)
     except ValueError:
         raise ValueError("'java' directory not found in path. Ensure it's a standard src/main/java path.")
+
+
+def extract_test_context(test_file_code: str) -> dict:
+    """
+    Extracts compilation context from a Java test file for LLM injection.
+    This ensures generated test methods will compile with the same imports and setup.
+    
+    Args:
+        test_file_code: The full Java test file source code
+        
+    Returns:
+        dict with keys:
+            - 'imports': List of import statements
+            - 'class_name': The test class name
+            - 'fields': List of class-level field declarations
+            - 'setup_methods': List of @Before/@BeforeEach setup method bodies
+            - 'context_string': Formatted string ready to include in LLM prompt
+    """
+    context = {
+        'imports': [],
+        'class_name': '',
+        'fields': [],
+        'setup_methods': [],
+        'context_string': ''
+    }
+    
+    # Extract imports
+    import_pattern = re.compile(r'^import\s+.*?;', re.MULTILINE)
+    context['imports'] = import_pattern.findall(test_file_code)
+    
+    # Extract class name
+    class_pattern = re.compile(r'public\s+class\s+(\w+)')
+    class_match = class_pattern.search(test_file_code)
+    if class_match:
+        context['class_name'] = class_match.group(1)
+    
+    # Extract field declarations (class-level variables)
+    field_pattern = re.compile(
+        r'^\s*(private|protected|public)?\s*(?:static\s+)?(?:final\s+)?[\w<>\[\],\s]+\s+\w+\s*(?:=\s*[^;]+)?;',
+        re.MULTILINE
+    )
+    for match in field_pattern.finditer(test_file_code):
+        field = match.group(0).strip()
+        # Exclude method-level declarations (inside braces)
+        field_pos = match.start()
+        # Count braces before this position to check if it's at class level
+        code_before = test_file_code[:field_pos]
+        open_braces = code_before.count('{') - code_before.count('}')
+        if open_braces == 1:  # Only at class level (after class opening brace)
+            context['fields'].append(field)
+    
+    # Extract @Before/@BeforeEach/@BeforeAll setup methods
+    setup_pattern = re.compile(
+        r'(@(?:Before|BeforeEach|BeforeAll|BeforeClass)\s+(?:public\s+)?(?:static\s+)?void\s+\w+\s*\([^)]*\)\s*(?:throws\s+[^{]+)?\s*\{)',
+        re.MULTILINE
+    )
+    for match in setup_pattern.finditer(test_file_code):
+        start = match.start()
+        # Find the matching closing brace
+        brace_count = 0
+        end = start
+        for i in range(start, len(test_file_code)):
+            if test_file_code[i] == '{':
+                brace_count += 1
+            elif test_file_code[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end = i + 1
+                    break
+        context['setup_methods'].append(test_file_code[start:end])
+    
+    # Build context string for LLM prompt
+    context_parts = []
+    
+    # Add imports
+    if context['imports']:
+        context_parts.append("// Existing imports (use these in your test methods):")
+        context_parts.extend(context['imports'])
+        context_parts.append("")
+    
+    # Add class info
+    if context['class_name']:
+        context_parts.append(f"// Test class: {context['class_name']}")
+        context_parts.append("")
+    
+    # Add fields
+    if context['fields']:
+        context_parts.append("// Available class fields:")
+        context_parts.extend([f"    {f}" for f in context['fields']])
+        context_parts.append("")
+    
+    # Add setup methods
+    if context['setup_methods']:
+        context_parts.append("// Setup methods (these run before each test):")
+        for method in context['setup_methods']:
+            context_parts.append(f"    {method}")
+        context_parts.append("")
+    
+    context['context_string'] = '\n'.join(context_parts)
+    
+    return context
+
+
+def extract_test_method_names(test_file_code: str) -> set:
+    """
+    Extracts all @Test method names from a Java test file.
+    
+    Args:
+        test_file_code: The Java test file source code
+        
+    Returns:
+        Set of test method names
+    """
+    pattern = re.compile(r'@Test\s+(?:public\s+)?void\s+(\w+)\s*\(', re.MULTILINE)
+    return set(pattern.findall(test_file_code))
+
+
+def parse_generated_test_methods(llm_response: str) -> list:
+    """
+    Parses LLM response to extract generated @Test method blocks.
+    
+    Args:
+        llm_response: The raw LLM response containing test methods
+        
+    Returns:
+        List of tuples: (method_name, method_code)
+    """
+    methods = []
+    
+    # Pattern to find @Test methods
+    method_pattern = re.compile(r'@Test\s+(?:public\s+)?void\s+(\w+)\s*\([^)]*\)\s*(?:throws\s+[^{]+)?\s*\{', re.MULTILINE)
+    
+    for match in method_pattern.finditer(llm_response):
+        method_name = match.group(1)
+        start = match.start()
+        
+        # Find the matching closing brace
+        brace_count = 0
+        end = start
+        for i in range(start, len(llm_response)):
+            if llm_response[i] == '{':
+                brace_count += 1
+            elif llm_response[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end = i + 1
+                    break
+        
+        method_code = llm_response[start:end]
+        methods.append((method_name, method_code))
+    
+    return methods
+
+
+def inject_test_methods(test_file_code: str, new_methods: list, existing_names: set = None) -> str:
+    """
+    Injects new @Test methods into an existing Java test file.
+    Handles name collisions by adding suffixes.
+    
+    Args:
+        test_file_code: The existing Java test file source code
+        new_methods: List of tuples (method_name, method_code) to inject
+        existing_names: Optional set of existing method names (extracted if not provided)
+        
+    Returns:
+        The modified test file code with injected methods
+    """
+    if existing_names is None:
+        existing_names = extract_test_method_names(test_file_code)
+    
+    # Find the position to inject (before the last closing brace of the class)
+    # We need to find the class's closing brace, not a method's
+    brace_count = 0
+    class_end_pos = -1
+    
+    for i, char in enumerate(test_file_code):
+        if char == '{':
+            brace_count += 1
+        elif char == '}':
+            brace_count -= 1
+            if brace_count == 0:
+                class_end_pos = i
+                break
+    
+    if class_end_pos == -1:
+        # Fallback: find the last closing brace
+        class_end_pos = test_file_code.rfind('}')
+    
+    if class_end_pos == -1:
+        raise ValueError("Could not find class closing brace in test file")
+    
+    # Build the injection string
+    injection_parts = ["\n    // ===== CodaMosa-style LLM Injected Tests =====\n"]
+    
+    used_names = set(existing_names)
+    for method_name, method_code in new_methods:
+        # Handle name collisions
+        final_name = method_name
+        suffix_counter = 1
+        while final_name in used_names:
+            final_name = f"{method_name}_injected{suffix_counter}"
+            suffix_counter += 1
+        
+        # Replace method name in code if we had to rename
+        if final_name != method_name:
+            method_code = re.sub(
+                rf'(void\s+){re.escape(method_name)}(\s*\()',
+                rf'\g<1>{final_name}\g<2>',
+                method_code
+            )
+        
+        used_names.add(final_name)
+        injection_parts.append(f"    {method_code}\n")
+    
+    injection_string = '\n'.join(injection_parts)
+    
+    # Insert before the closing brace
+    modified_code = test_file_code[:class_end_pos] + injection_string + "\n" + test_file_code[class_end_pos:]
+    
+    return modified_code
+
+
+def get_public_method_signatures(java_code: str) -> list:
+    """
+    Extracts public method signatures from Java source code.
+    
+    Args:
+        java_code: The Java source code
+        
+    Returns:
+        List of method signature strings
+    """
+    method_pattern = re.compile(
+        r'public\s+(?:static\s+)?'  # Match "public" and optional "static"
+        r'[\w<>,\[\]]+\s+'  # Return type
+        r'(\w+)\s*'  # Method name
+        r'\(([^)]*)\)'  # Parameters
+    )
+    
+    signatures = []
+    for match in method_pattern.finditer(java_code):
+        method_name, params = match.groups()
+        signatures.append(f"{method_name}({params})")
+    
+    return signatures

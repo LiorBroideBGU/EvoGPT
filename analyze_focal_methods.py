@@ -80,6 +80,10 @@ def analyze_project(project_path, project_name):
     if not os.path.exists(main_src_path) and project_name == 'mockito':
         main_src_path = os.path.join(project_path, 'mockito-core', 'src', 'main', 'java')
     
+    # For closure-compiler, source is directly in src/com/...
+    if not os.path.exists(main_src_path) and project_name == 'closure-compiler':
+        main_src_path = os.path.join(project_path, 'src')
+    
     if not os.path.exists(main_src_path):
         return 0, 0
     
@@ -95,9 +99,10 @@ def analyze_project(project_path, project_name):
     return focal_classes, focal_methods
 
 def main():
-    benchmarks_dir = '/Users/liorbr/PycharmProjects/EvoGPT/benchmarks'
+    benchmarks_dir = 'benchmarks'
     
     projects = [
+        'closure-compiler',
         'commons-cli',
         'commons-codec',
         'commons-collections',
@@ -111,6 +116,7 @@ def main():
         'jackson-databind',
         'jackson-dataformat-xml',
         'jfreechart',
+        'joda-time',
         'jsoup',
         'mockito'
     ]
@@ -149,7 +155,7 @@ def main():
     print("=" * 80)
     
     # Save to file
-    output_file = '/Users/liorbr/PycharmProjects/EvoGPT/focal_methods_analysis.txt'
+    output_file = 'focal_methods_analysis.txt'
     with open(output_file, 'w') as f:
         f.write("=" * 80 + "\n")
         f.write("FOCAL CLASSES AND FOCAL METHODS BY PROJECT\n")
