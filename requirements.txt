@@ -13,4 +13,7 @@ pytest==8.2.2
 pytest-asyncio==0.23.7
 
 # Optional: Additional packages that might be useful for this type of project
-typing-extensions==4.12.2 
+typing-extensions==4.12.2
+
+# Comparison script dependencies
+matplotlib

@@ -1,0 +1,56 @@
+{
+  "targets": [
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/FormattingStyle.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/Gson.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/GsonBuilder.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/JsonArray.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/JsonElement.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/JsonNull.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/JsonObject.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/JsonParser.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/JsonPrimitive.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/JsonStreamParser.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/LongSerializationPolicy.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/ToNumberPolicy.java"
+    },
+    {
+      "project": "gson",
+      "class_path": "benchmarks/gson/src/main/java/com/google/gson/TypeAdapter.java"
+    }
+  ]
+}
