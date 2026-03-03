@@ -1,12 +1,12 @@
-API_KEY = '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'
+API_KEY = '<your-api-key>'
 CLASS_PATH = 'benchmarks/gson/src/main/java/com/google/gson/JsonArray.java'
 TEMPERATURE = 0.5
 MODEL = 'gpt-4o-mini'
 EVO_GENERATIONS = 25 # Change to your desired number of generations
 EVO_POPULATION = 25 # Change to your desired population size
 PROJECT = 'gson'
-JAVAC_BIN = '/opt/homebrew/opt/openjdk@11/bin/javac'
-JAVA_BIN = '/opt/homebrew/opt/openjdk@11/bin/java'
+JAVAC_BIN = '<your-javac-bin>'
+JAVA_BIN = '<your-java-bin>'
 
 # Mutation Strategy Configuration
 # Options: 'llm' (uses MutationAssertionGenerator with LLM) or 'programmatic' (uses EvoSuite-style mutations)
