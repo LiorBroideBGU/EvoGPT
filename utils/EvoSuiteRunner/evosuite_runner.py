@@ -184,6 +184,50 @@ class EvoSuiteRunner:
         self._sanitize_test_for_jacoco(test_file)
         return test_file
 
+    @staticmethod
+    def _find_method_end(content, brace_start):
+        """Find closing brace of a method body, skipping braces inside
+        string/char literals and comments."""
+        depth = 0
+        i = brace_start
+        length = len(content)
+        while i < length:
+            ch = content[i]
+            if ch == '/' and i + 1 < length:
+                nxt = content[i + 1]
+                if nxt == '/':
+                    i = content.find('\n', i)
+                    if i == -1:
+                        return length
+                    i += 1
+                    continue
+                elif nxt == '*':
+                    i = content.find('*/', i + 2)
+                    if i == -1:
+                        return length
+                    i += 2
+                    continue
+            if ch == '"':
+                i += 1
+                while i < length and content[i] != '"':
+                    if content[i] == '\\':
+                        i += 1
+                    i += 1
+            elif ch == "'":
+                i += 1
+                while i < length and content[i] != "'":
+                    if content[i] == '\\':
+                        i += 1
+                    i += 1
+            elif ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+            i += 1
+        return length
+
     def _sanitize_test_for_jacoco(self, test_file):
         """
         Transform an EvoSuite test into a fully standalone JUnit 4 test
@@ -195,74 +239,46 @@ class EvoSuiteRunner:
 
         content = ''.join(lines)
 
-        # --- Pass 1: remove entire test methods that catch NoClassDefFoundError ---
-        # These are artifacts of EvoSuite's separateClassLoader and will
-        # always fail outside the EvoRunner.
-        removed_methods = 0
-        while True:
-            m = re.search(r'(\s*)@Test\b[^\n]*\n\s*public\s+void\s+\w+\s*\(\)\s*(?:throws\s+\w+\s*)?\{', content)
-            if not m:
-                break
-            # Find the method body end using character-level brace counting
-            brace_start = content.index('{', m.start())
-            depth = 0
-            end = brace_start
-            for idx in range(brace_start, len(content)):
-                if content[idx] == '{':
-                    depth += 1
-                elif content[idx] == '}':
-                    depth -= 1
-                    if depth == 0:
-                        end = idx + 1
-                        break
-            method_body = content[m.start():end]
-            if 'NoClassDefFoundError' in method_body:
-                content = content[:m.start()] + content[end:]
-                removed_methods += 1
-            else:
-                # Not a NoClassDefFoundError method — skip past it so we don't
-                # re-match the same @Test. Replace @Test temporarily with a marker.
-                content = content[:m.start()] + content[m.start():end].replace('@Test', '@_KEEP_', 1) + content[end:]
+        _METHOD_RE = r'(\s*)@Test\b[^\n]*\n\s*public\s+void\s+\w+\s*\(\)\s*(?:throws\s+\w+\s*)?\{'
 
-        content = content.replace('@_KEEP_', '@Test')
+        def _strip_methods(content, predicate, label):
+            removed = 0
+            while True:
+                m = re.search(_METHOD_RE, content)
+                if not m:
+                    break
+                brace_start = content.index('{', m.start())
+                end = self._find_method_end(content, brace_start)
+                method_body = content[m.start():end]
+                if predicate(method_body):
+                    content = content[:m.start()] + content[end:]
+                    removed += 1
+                else:
+                    content = content[:m.start()] + content[m.start():end].replace('@Test', '@_KEEP_', 1) + content[end:]
+            content = content.replace('@_KEEP_', '@Test')
+            if removed:
+                print(f"[EvoSuite] Removed {removed} {label} test methods")
+            return content
 
-        if removed_methods:
-            print(f"[EvoSuite] Removed {removed_methods} NoClassDefFoundError test methods")
-
-        # --- Pass 1b: remove test methods using EvoSuite's shaded Mockito ---
-        removed_mock = 0
-        content = content.replace('@_KEEP_', '@Test')
-        while True:
-            m = re.search(r'(\s*)@Test\b[^\n]*\n\s*public\s+void\s+\w+\s*\(\)\s*(?:throws\s+\w+\s*)?\{', content)
-            if not m:
-                break
-            brace_start = content.index('{', m.start())
-            depth = 0
-            end = brace_start
-            for idx in range(brace_start, len(content)):
-                if content[idx] == '{':
-                    depth += 1
-                elif content[idx] == '}':
-                    depth -= 1
-                    if depth == 0:
-                        end = idx + 1
-                        break
-            method_body = content[m.start():end]
-            if 'ViolatedAssumptionAnswer' in method_body or 'mock(' in method_body:
-                content = content[:m.start()] + content[end:]
-                removed_mock += 1
-            else:
-                content = content[:m.start()] + content[m.start():end].replace('@Test', '@_KEEP_', 1) + content[end:]
-
-        content = content.replace('@_KEEP_', '@Test')
-
-        if removed_mock:
-            print(f"[EvoSuite] Removed {removed_mock} Mockito-dependent test methods")
+        content = _strip_methods(
+            content,
+            lambda body: 'NoClassDefFoundError' in body,
+            "NoClassDefFoundError",
+        )
+        content = _strip_methods(
+            content,
+            lambda body: 'ViolatedAssumptionAnswer' in body or 'mock(' in body,
+            "Mockito-dependent",
+        )
+        content = _strip_methods(
+            content,
+            lambda body: bool(re.search(r'\bMock(?:File|FileInputStream|FileOutputStream|PrintStream|URL)\b', body)),
+            "EvoSuite-mock-dependent",
+        )
 
         # --- Pass 2: strip all EvoSuite imports and annotations ---
-        content = re.sub(r'import\s+org\.evosuite\.runtime\.\w+;\n', '', content)
-        content = re.sub(r'import\s+static\s+org\.evosuite\.runtime\.\w+\.\*;\n', '', content)
-        content = re.sub(r'import\s+static\s+org\.evosuite\.shaded\.[^;]+;\n', '', content)
+        content = re.sub(r'import\s+org\.evosuite\.[^;]+;\n', '', content)
+        content = re.sub(r'import\s+static\s+org\.evosuite\.[^;]+;\n', '', content)
         content = re.sub(r'@RunWith\(EvoRunner\.class\)\s*', '', content)
         content = re.sub(r'@EvoRunnerParameters\([^)]*\)\s*\n?', '', content)
         content = re.sub(

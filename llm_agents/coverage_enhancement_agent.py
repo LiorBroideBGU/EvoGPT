@@ -25,38 +25,51 @@ class CoverageEnhancementAgent(UnitTestGenerator):
         save_test_suite(current_test_suite, test_file_path)
 
         ## Generation repair loop
-        success, output = False, None
         executor = JavaExecutor(test_file_path)
         for iteration in range(iterations):
+            # --- Syntax check ---
             try:
                 executor.check_java_code_syntax()
             except SyntaxError as e:
-                success, output = False, e
-                self.update_long_term_memory('session1',self.syntax_error_prompt.format(output))
+                self.update_long_term_memory('session1', self.syntax_error_prompt.format(e))
                 current_test_suite = await self.get_unit_test_for_class(session_id='session1')
                 save_test_suite(current_test_suite, test_file_path)
 
-            success, output = executor.compile_java()
-            if not success:
-                unimport_classes = get_class_imports(extract_project_name(self.java_file_path), output)
+            # --- Compilation ---
+            compiled, compile_err = executor.compile_java()
+            if not compiled:
+                unimport_classes = get_class_imports(extract_project_name(self.java_file_path), compile_err)
                 if unimport_classes:
                     current_test_suite = add_imports(unimport_classes, current_test_suite)
                     await self.edit_history_response('session1', current_test_suite)
                     save_test_suite(current_test_suite, test_file_path)
+                    compiled, compile_err = executor.compile_java()
 
-            success, output = executor.run_java()
-            if not success:
-                self.update_long_term_memory('session1', self.repair_prompt.format(output))
+            if not compiled:
+                self.update_long_term_memory('session1', self.repair_prompt.format(compile_err))
                 current_test_suite = await self.get_unit_test_for_class(session_id='session1')
                 save_test_suite(current_test_suite, test_file_path)
+                continue
 
-            else:
+            # --- Runtime ---
+            ran, run_err = executor.run_java()
+            if ran:
                 return
 
-        for i in range(6):
-            success, output = executor.run_java()
-            if not success:
-                current_test_suite = remove_junit_tests(current_test_suite, output)
-                save_test_suite(current_test_suite, test_file_path)
-            else:
+            self.update_long_term_memory('session1', self.repair_prompt.format(run_err))
+            current_test_suite = await self.get_unit_test_for_class(session_id='session1')
+            save_test_suite(current_test_suite, test_file_path)
+
+        # Fallback: remove failing tests one by one (keep at least 1)
+        for _ in range(6):
+            ran, run_err = executor.run_java()
+            if ran:
                 break
+            cleaned = remove_junit_tests(current_test_suite, run_err)
+            if cleaned == current_test_suite:
+                break
+            has_test = re.search(r'@Test\s+public\s+void\s+\w+', cleaned)
+            if not has_test:
+                break
+            current_test_suite = cleaned
+            save_test_suite(current_test_suite, test_file_path)

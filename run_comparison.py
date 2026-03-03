@@ -18,6 +18,8 @@ import time
 
 from utils.EvoSuiteRunner.evosuite_runner import EvoSuiteRunner, download_evosuite_jars
 from utils.test_evaluator import TestEvaluator
+from utils.dataset_utils import is_focal_class
+from utils.function_utils import read_java_file_as_string
 
 
 def run_evogpt(class_path, project, budget, budget_type, population, output_dir):
@@ -199,6 +201,82 @@ def evaluate_test(project, source_path, test_file, work_dir, extra_cp=None):
     return evaluator.evaluate(test_file, work_dir)
 
 
+def _ensure_extracted(project_name, benchmarks_dir="benchmarks"):
+    """Extract the project zip if the folder doesn't already exist."""
+    project_path = os.path.join(benchmarks_dir, project_name)
+    if os.path.isdir(project_path):
+        return True
+
+    zip_path = os.path.join(benchmarks_dir, f"{project_name}.zip")
+    if not os.path.isfile(zip_path):
+        return False
+
+    import zipfile
+    print(f"[discover] Extracting {zip_path} ...")
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(benchmarks_dir)
+    return os.path.isdir(project_path)
+
+
+def _find_source_root(project_name, benchmarks_dir="benchmarks"):
+    """Locate the src/main/java root for a given benchmark project."""
+    project_path = os.path.join(benchmarks_dir, project_name)
+    if not os.path.isdir(project_path):
+        return None
+
+    candidates = [
+        os.path.join(project_path, "src", "main", "java"),
+        os.path.join(project_path, "src", "java"),
+    ]
+    if project_name == "mockito":
+        candidates.insert(0, os.path.join(project_path, "mockito-core", "src", "main", "java"))
+    if project_name == "closure-compiler":
+        candidates.append(os.path.join(project_path, "src"))
+
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return None
+
+
+def discover_focal_classes(project_name, benchmarks_dir="benchmarks", limit=None):
+    """
+    Walk a benchmark project's source tree and return class paths for every
+    focal class (public, non-abstract, non-interface, with real public methods).
+    Automatically extracts the project zip if the folder doesn't exist yet.
+    """
+    if not _ensure_extracted(project_name, benchmarks_dir):
+        print(f"[discover] No folder or zip found for project '{project_name}' under {benchmarks_dir}/")
+        return []
+
+    source_root = _find_source_root(project_name, benchmarks_dir)
+    if source_root is None:
+        print(f"[discover] Could not find source root for project '{project_name}' under {benchmarks_dir}/")
+        return []
+
+    focal_paths = []
+    skipped = 0
+    for root, _dirs, files in os.walk(source_root):
+        for fname in sorted(files):
+            if not fname.endswith(".java"):
+                continue
+            fpath = os.path.join(root, fname)
+            code = read_java_file_as_string(fpath)
+            if code and is_focal_class(code):
+                focal_paths.append(fpath)
+            else:
+                skipped += 1
+
+    print(f"[discover] {project_name}: found {len(focal_paths)} focal classes "
+          f"({skipped} skipped — interfaces / abstract / non-public)")
+
+    if limit is not None and limit < len(focal_paths):
+        focal_paths = focal_paths[:limit]
+        print(f"[discover] Limiting to first {limit} classes")
+
+    return focal_paths
+
+
 def print_results_table(results):
     """Print a formatted comparison table."""
     if not results:
@@ -252,13 +330,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Single class, generations budget
+  # All focal classes in a project
+  python run_comparison.py --project jackson-core --budget-type time --budgets 60
+
+  # Limit to 10 focal classes
+  python run_comparison.py --project jackson-core --limit 10 --budget-type generations --budgets 5
+
+  # Single class
   python run_comparison.py --class-path benchmarks/gson/src/main/java/com/google/gson/JsonArray.java \\
     --project gson --budget-type generations --budgets 5 10 25
-
-  # Single class, time budget
-  python run_comparison.py --class-path benchmarks/gson/src/main/java/com/google/gson/JsonArray.java \\
-    --project gson --budget-type time --budgets 30 60 120
 
   # Batch mode
   python run_comparison.py --batch-config comparison_config.json --budget-type time --budgets 60
@@ -269,7 +349,10 @@ Examples:
     )
 
     parser.add_argument("--class-path", help="Path to Java source file under test")
-    parser.add_argument("--project", help="Project name (e.g., gson)")
+    parser.add_argument("--project", help="Project name (e.g., gson, jackson-core). "
+                        "When used without --class-path, discovers all focal classes in the project.")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Max number of focal classes to run when discovering a whole project (default: all)")
     parser.add_argument("--batch-config", help="Path to batch config JSON file")
 
     parser.add_argument("--budget-type", choices=["generations", "time"], default="generations",
@@ -277,7 +360,7 @@ Examples:
     parser.add_argument("--budgets", nargs="+", type=int, default=[5, 10, 25],
                         help="Budget values to sweep (applied to both tools)")
 
-    parser.add_argument("--evogpt-population", type=int, default=5,
+    parser.add_argument("--evogpt-population", type=int, default=25,
                         help="EvoGPT initial population size (default: 5)")
     parser.add_argument("--output-dir", default="comparison_results",
                         help="Output directory for results")
@@ -302,16 +385,27 @@ Examples:
         targets = config["targets"]
     elif args.class_path and args.project:
         targets = [{"project": args.project, "class_path": args.class_path}]
+    elif args.project:
+        focal_paths = discover_focal_classes(args.project, limit=args.limit)
+        if not focal_paths:
+            parser.error(f"No focal classes found for project '{args.project}'")
+        targets = [{"project": args.project, "class_path": p} for p in focal_paths]
     else:
-        parser.error("Provide either --class-path + --project, or --batch-config")
+        parser.error("Provide --project (optionally with --class-path or --limit), or --batch-config")
 
     os.makedirs(args.output_dir, exist_ok=True)
+    csv_path = os.path.join(args.output_dir, "results.csv")
     all_results = []
 
-    for target in targets:
+    def _record(row):
+        all_results.append(row)
+        save_csv(all_results, csv_path)
+
+    for idx, target in enumerate(targets, 1):
         project = target["project"]
         class_path = target["class_path"]
         class_name = os.path.splitext(os.path.basename(class_path))[0]
+        print(f"\n[{idx}/{len(targets)}] Processing {class_name} ...")
 
         # --- TestART baseline (runs once per class, budget-independent) ---
         if not args.skip_testart:
@@ -322,7 +416,7 @@ Examples:
                 if test_file:
                     work_dir = os.path.join(args.output_dir, "eval", "testart", project, class_name)
                     metrics = evaluate_test(project, class_path, test_file, work_dir)
-                    all_results.append({
+                    _record({
                         "project": project,
                         "class": class_name,
                         "tool": "TestART",
@@ -334,7 +428,7 @@ Examples:
                         "elapsed": elapsed,
                     })
                 else:
-                    all_results.append({
+                    _record({
                         "project": project, "class": class_name, "tool": "TestART",
                         "budget": "N/A", "budget_type": "single",
                         "branch_coverage": None, "line_coverage": None,
@@ -344,7 +438,7 @@ Examples:
                 print(f"[TestART] FAILED for {class_name}: {e}")
                 import traceback
                 traceback.print_exc()
-                all_results.append({
+                _record({
                     "project": project, "class": class_name, "tool": "TestART",
                     "budget": "N/A", "budget_type": "single",
                     "branch_coverage": None, "line_coverage": None,
@@ -362,7 +456,7 @@ Examples:
                     if test_file:
                         work_dir = os.path.join(args.output_dir, "eval", "evogpt", project, class_name, f"{args.budget_type}_{budget}")
                         metrics = evaluate_test(project, class_path, test_file, work_dir)
-                        all_results.append({
+                        _record({
                             "project": project,
                             "class": class_name,
                             "tool": "EvoGPT",
@@ -374,7 +468,7 @@ Examples:
                             "elapsed": elapsed,
                         })
                     else:
-                        all_results.append({
+                        _record({
                             "project": project, "class": class_name, "tool": "EvoGPT",
                             "budget": budget, "budget_type": args.budget_type,
                             "branch_coverage": None, "line_coverage": None,
@@ -384,7 +478,7 @@ Examples:
                     print(f"[EvoGPT] FAILED for {class_name} budget={budget}: {e}")
                     import traceback
                     traceback.print_exc()
-                    all_results.append({
+                    _record({
                         "project": project, "class": class_name, "tool": "EvoGPT",
                         "budget": budget, "budget_type": args.budget_type,
                         "branch_coverage": None, "line_coverage": None,
@@ -399,8 +493,13 @@ Examples:
                     )
                     if test_file:
                         work_dir = os.path.join(args.output_dir, "eval", "evosuite", project, class_name, f"{args.budget_type}_{budget}")
-                        metrics = evaluate_test(project, class_path, test_file, work_dir)
-                        all_results.append({
+                        compiled_source_dir = os.path.join(
+                            args.output_dir, "evosuite_runs", project, class_name,
+                            f"{args.budget_type}_{budget}", "compiled_source"
+                        )
+                        evo_extra_cp = compiled_source_dir if os.path.isdir(compiled_source_dir) else None
+                        metrics = evaluate_test(project, class_path, test_file, work_dir, extra_cp=evo_extra_cp)
+                        _record({
                             "project": project,
                             "class": class_name,
                             "tool": "EvoSuite",
@@ -412,7 +511,7 @@ Examples:
                             "elapsed": elapsed,
                         })
                     else:
-                        all_results.append({
+                        _record({
                             "project": project, "class": class_name, "tool": "EvoSuite",
                             "budget": budget, "budget_type": args.budget_type,
                             "branch_coverage": None, "line_coverage": None,
@@ -422,7 +521,7 @@ Examples:
                     print(f"[EvoSuite] FAILED for {class_name} budget={budget}: {e}")
                     import traceback
                     traceback.print_exc()
-                    all_results.append({
+                    _record({
                         "project": project, "class": class_name, "tool": "EvoSuite",
                         "budget": budget, "budget_type": args.budget_type,
                         "branch_coverage": None, "line_coverage": None,
@@ -430,8 +529,6 @@ Examples:
                     })
 
     print_results_table(all_results)
-    csv_path = os.path.join(args.output_dir, "results.csv")
-    save_csv(all_results, csv_path)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,35 @@
 import javalang
-from javalang.tree import MethodDeclaration, ClassDeclaration
+from javalang.tree import MethodDeclaration, ClassDeclaration, InterfaceDeclaration
 from utils.function_utils import *
+
+
+def is_focal_class(java_code: str) -> bool:
+    """
+    Determines whether the given Java source defines a focal class:
+    a public, concrete (non-abstract, non-interface) class with at least one
+    public method that has an implementation body.
+    """
+    try:
+        tree = javalang.parse.parse(java_code)
+    except javalang.parser.JavaSyntaxError:
+        return False
+
+    for type_decl in tree.types:
+        if isinstance(type_decl, InterfaceDeclaration):
+            continue
+        if not isinstance(type_decl, ClassDeclaration):
+            continue
+        if 'public' not in (type_decl.modifiers or set()):
+            continue
+        if 'abstract' in (type_decl.modifiers or set()):
+            continue
+
+        for method in type_decl.methods:
+            if 'public' in (method.modifiers or set()) and method.body is not None:
+                return True
+
+    return False
+
 
 def get_type_string(type):
     if type is None:

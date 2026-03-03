@@ -34,68 +34,93 @@ class ChromosomesGenerator:
         if self.verbose:
             print(msg)
 
-    async def threaded_generation(self,thread_number, temperature):
-        try:
-            self._log(f"Thread-{thread_number} starting with temperature={temperature}")
+    async def threaded_generation(self, thread_number, temperature, max_retries=3):
+        import sys as _sys
 
-            unit_test_generator = UnitTestGenerator(api_key=API_KEY, model=MODEL, temperature=temperature)
-            java_file_path = self.source_code_path
-            project_id = self.project_name
+        for attempt in range(1, max_retries + 1):
+            try:
+                self._log(f"Thread-{thread_number} starting (attempt {attempt}/{max_retries}) with temperature={temperature}")
 
-            # Generation + Repair loop (initial)
-            await unit_test_generator.generation_repair_loop(java_file_path=java_file_path, project_id=project_id,
-                                                       thread_number=thread_number)
+                unit_test_generator = UnitTestGenerator(api_key=API_KEY, model=MODEL, temperature=temperature)
+                java_file_path = self.source_code_path
+                project_id = self.project_name
 
-            # Coverage - Use cross-platform paths
-            results_base = os.path.join(os.getcwd(), 'results', 'unit_tests', self.project_name, self.class_name, str(thread_number))
-            javafiles_dir = os.path.join(results_base, 'javafiles')
-            classfiles_dir = os.path.join(results_base, 'classfiles')
-            
-            jcc = JavaCodeCoverage(
-                javafiles_dir,
-                self.class_name,
-                self.project_name,
-                thread_id=thread_number
-            )
-            jcc.generate_coverage_report()
-            coverage_xml_path = os.path.join(classfiles_dir, 'coverage.xml')
-            coverage_metrics, missed_branches = jcc.parse_jacoco_xml(coverage_xml_path)
+                # Generation + Repair loop (initial)
+                await unit_test_generator.generation_repair_loop(java_file_path=java_file_path, project_id=project_id,
+                                                           thread_number=thread_number)
 
-            # Enhancements
-            test_enhancements = CoverageEnhancementAgent(
-                api_key=API_KEY,
-                model=MODEL,
-                temperature=temperature,
-                java_file_path=java_file_path
-            )
-            await test_enhancements.generation_repair_loop(coverage_metrics, missed_branches, thread_number=thread_number)
-            # Paths with thread-specific test names
-            base_dir = javafiles_dir
-            base_cls_dir = classfiles_dir
-            test1_path = os.path.join(base_dir, f'{self.class_name}Test.java')
-            test2_path = os.path.join(base_dir, f'{self.class_name}EnhancedTest.java')
+                # Verify the test compiles before proceeding to coverage
+                results_base = os.path.join(os.getcwd(), 'results', 'unit_tests', self.project_name, self.class_name, str(thread_number))
+                javafiles_dir = os.path.join(results_base, 'javafiles')
+                classfiles_dir = os.path.join(results_base, 'classfiles')
 
-            first_unit_test = read_java_file_as_string(test1_path)
-            enhanced_unit_test = read_java_file_as_string(test2_path)
-            final_unit_test = merge_java_unit_tests(first_unit_test, enhanced_unit_test, f'{self.class_name}Test')
-            # Cleanup
-            delete_file(test1_path)
-            delete_file(test2_path)
-            delete_file(base_cls_dir)
+                test_file = os.path.join(javafiles_dir, f'{self.class_name}Test.java')
+                executor = JavaExecutor(test_file)
+                compiled, compile_err = executor.compile_java()
+                if not compiled:
+                    raise RuntimeError(f"Test failed to compile after repair loop: {compile_err[:300]}")
 
-            # Save final merged test - use cross-platform path
-            merged_path = os.path.join(base_dir, f'{self.class_name}Test.java')
-            save_test_suite(final_unit_test, merged_path)
-            chromosome_path = javafiles_dir  # Use the already-defined cross-platform path
-            with self.lock:
-                chromosome = Chromosome(path=chromosome_path, thread_id=thread_number)
-                chromosome.compute_fitness()
+                ran, run_err = executor.run_java()
+                if not ran:
+                    raise RuntimeError(f"Test failed to run after repair loop: {run_err[:300]}")
 
-            with self.lock:
-                self.chromosomes.append(chromosome)
-            self._log(f"Agent-{thread_number} done, saved final test at: {merged_path}")
-        except Exception as e:
-            self._log(f"FAILED TO GENERATE CHROMOSOME! {e}")
+                # Coverage
+                jcc = JavaCodeCoverage(
+                    javafiles_dir,
+                    self.class_name,
+                    self.project_name,
+                    thread_id=thread_number
+                )
+                coverage_ok = jcc.generate_coverage_report()
+                coverage_xml_path = os.path.join(classfiles_dir, 'coverage.xml')
+
+                if coverage_ok and os.path.isfile(coverage_xml_path):
+                    coverage_metrics, missed_branches = jcc.parse_jacoco_xml(coverage_xml_path)
+
+                    # Enhancements
+                    test_enhancements = CoverageEnhancementAgent(
+                        api_key=API_KEY,
+                        model=MODEL,
+                        temperature=temperature,
+                        java_file_path=java_file_path
+                    )
+                    await test_enhancements.generation_repair_loop(coverage_metrics, missed_branches, thread_number=thread_number)
+
+                    first_unit_test = read_java_file_as_string(
+                        os.path.join(javafiles_dir, f'{self.class_name}Test.java'))
+                    enhanced_unit_test = read_java_file_as_string(
+                        os.path.join(javafiles_dir, f'{self.class_name}EnhancedTest.java'))
+                    final_unit_test = merge_java_unit_tests(first_unit_test, enhanced_unit_test, f'{self.class_name}Test')
+                else:
+                    self._log(f"Thread-{thread_number} coverage report failed; skipping enhancement, using base test")
+                    final_unit_test = read_java_file_as_string(
+                        os.path.join(javafiles_dir, f'{self.class_name}Test.java')
+                    )
+
+                # Cleanup
+                test1_path = os.path.join(javafiles_dir, f'{self.class_name}Test.java')
+                test2_path = os.path.join(javafiles_dir, f'{self.class_name}EnhancedTest.java')
+                delete_file(test1_path)
+                delete_file(test2_path)
+                delete_file(classfiles_dir)
+
+                # Save final merged test
+                merged_path = os.path.join(javafiles_dir, f'{self.class_name}Test.java')
+                save_test_suite(final_unit_test, merged_path)
+                chromosome_path = javafiles_dir
+                with self.lock:
+                    chromosome = Chromosome(path=chromosome_path, thread_id=thread_number)
+                    chromosome.compute_fitness()
+
+                with self.lock:
+                    self.chromosomes.append(chromosome)
+                self._log(f"Agent-{thread_number} done, saved final test at: {merged_path}")
+                return
+
+            except Exception as e:
+                print(f"[Thread-{thread_number}] Attempt {attempt}/{max_retries} failed: {e}", file=_sys.stderr)
+                if attempt >= max_retries:
+                    print(f"[Thread-{thread_number}] All {max_retries} attempts exhausted for {self.class_name}", file=_sys.stderr)
 
 
 

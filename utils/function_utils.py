@@ -261,6 +261,10 @@ import re
 import re
 
 def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -> str:
+    def get_package(code: str):
+        match = re.search(r'^package\s+[\w.]+\s*;', code, re.MULTILINE)
+        return match.group(0) if match else None
+
     def get_imports(code: str):
         return set(re.findall(r'^import\s+.*?;', code, re.MULTILINE))
 
@@ -316,7 +320,7 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
 
         methods = {}
         for match in pattern.finditer(code):
-            method_name = match.group(4)
+            method_name = match.group(3)
             start = match.start()
 
             # Extract full method body with brace matching
@@ -331,6 +335,31 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
                         methods[method_name] = code[start:end]
                         break
 
+        return methods
+
+    def extract_lifecycle_methods(code: str):
+        """Extract @Before, @After, @BeforeClass, @AfterClass methods."""
+        annotations = r'@(?:Before|After|BeforeClass|AfterClass)'
+        pattern = re.compile(
+            rf'({annotations})\s+public\s+(?:static\s+)?void\s+(\w+)\s*\([^)]*\)\s*\{{',
+            re.MULTILINE
+        )
+        methods = {}
+        for match in pattern.finditer(code):
+            annotation = match.group(1)
+            method_name = match.group(2)
+            start = match.start()
+            braces = 0
+            end = start
+            for i in range(start, len(code)):
+                if code[i] == '{':
+                    braces += 1
+                elif code[i] == '}':
+                    braces -= 1
+                    if braces == 0:
+                        end = i + 1
+                        break
+            methods[(annotation, method_name)] = code[start:end]
         return methods
 
     def extract_static_classes(code: str):
@@ -358,6 +387,7 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
         return source_code
 
     # Step 1: Gather elements
+    package_stmt = get_package(java_test_1) or get_package(java_test_2)
     imports = sorted(get_imports(java_test_1) | get_imports(java_test_2))
     fields = sorted(set(get_fields(java_test_1)) | set(get_fields(java_test_2)))
 
@@ -369,6 +399,8 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
     static_methods_2 = extract_static_methods(java_test_2)
     static_classes_1 = extract_static_classes(java_test_1)
     static_classes_2 = extract_static_classes(java_test_2)
+    lifecycle_1 = extract_lifecycle_methods(java_test_1)
+    lifecycle_2 = extract_lifecycle_methods(java_test_2)
 
     # Step 2: Rename conflicts in java_test_2
     method_conflicts = set(static_methods_1.keys()) & set(static_methods_2.keys())
@@ -382,8 +414,21 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
     static_methods_2 = extract_static_methods(java_test_2)
     static_classes_2 = extract_static_classes(java_test_2)
 
+    # Merge lifecycle methods: keep suite 1, add unique ones from suite 2
+    merged_lifecycle = dict(lifecycle_1)
+    for key, body in lifecycle_2.items():
+        if key not in merged_lifecycle:
+            annotation, name = key
+            if any(name == n for (_, n) in merged_lifecycle):
+                new_name = name + "Enhanced"
+                body = re.sub(rf'\b{name}\b', new_name, body, count=1)
+            merged_lifecycle[key] = body
+
     # Step 3: Merge everything
-    merged_code = "\n".join(imports) + "\n\n"
+    merged_code = ""
+    if package_stmt:
+        merged_code += package_stmt + "\n\n"
+    merged_code += "\n".join(imports) + "\n\n"
     merged_code += f"public class {class_name} {{\n\n"
 
     # Fields
@@ -391,6 +436,10 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
         merged_code += f"    {field}\n"
 
     merged_code += "\n"
+
+    # Lifecycle methods (@Before, @After, etc.)
+    for lc_code in merged_lifecycle.values():
+        merged_code += f"    {lc_code}\n\n"
 
     # Static classes
     for cls_code in list(static_classes_1.values()) + list(static_classes_2.values()):
