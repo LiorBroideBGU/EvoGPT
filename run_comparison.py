@@ -191,6 +191,128 @@ def run_evosuite(class_path, project, budget, budget_type, output_dir):
     return test_file, elapsed, runner.get_runtime_jar()
 
 
+def run_evogpt_seeded(class_path, project, budget, budget_type, population, output_dir):
+    """
+    Hybrid approach: generate an initial population with EvoGPT's LLM threads,
+    then seed EvoSuite's evolutionary algorithm with those tests.
+    """
+    import config.config as cfg
+    import re as _re
+    cfg.CLASS_PATH = class_path
+    cfg.PROJECT = project
+
+    from app.chromosomes_generator import ChromosomesGenerator
+
+    gen = ChromosomesGenerator(project_name=project, source_code_path=class_path, verbose=False)
+    class_name = gen.class_name
+
+    print(f"\n{'='*60}")
+    print(f"[EvoGPT+EvoSuite] Running: {class_path}")
+    print(f"[EvoGPT+EvoSuite] Phase 1: LLM population ({population} threads)")
+    print(f"{'='*60}")
+
+    start = time.time()
+
+    # Phase 1: Generate initial LLM population (no evolution)
+    base_temps = [0.3, 0.4, 0.5, 0.6, 0.8]
+    temperatures = [base_temps[i % len(base_temps)] for i in range(population)]
+
+    async def _generate_population():
+        try:
+            tasks = [
+                gen.threaded_generation(i + 1, temp)
+                for i, temp in enumerate(temperatures)
+            ]
+            await asyncio.gather(*tasks)
+        finally:
+            pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            for t in pending:
+                t.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+    _stdout = sys.stdout
+    sys.stdout = open(os.devnull, 'w')
+    try:
+        asyncio.run(_generate_population())
+    finally:
+        sys.stdout.close()
+        sys.stdout = _stdout
+    _stderr = sys.stderr
+    sys.stderr = open(os.devnull, 'w')
+    gc.collect()
+    sys.stderr.close()
+    sys.stderr = _stderr
+
+    llm_elapsed = time.time() - start
+    print(f"[EvoGPT+EvoSuite] Phase 1 done: {len(gen.chromosomes)} tests generated ({llm_elapsed:.1f}s)")
+
+    if not gen.chromosomes:
+        print("[EvoGPT+EvoSuite] No LLM tests generated, falling back to unseeded EvoSuite")
+        return run_evosuite(class_path, project, budget, budget_type, output_dir)
+
+    # Phase 2: Collect LLM tests into a seed directory with package structure
+    seed_base = os.path.join(output_dir, "evogpt_seeds", project, class_name)
+    os.makedirs(seed_base, exist_ok=True)
+
+    # Detect package from source file
+    pkg = None
+    try:
+        with open(class_path, 'r') as f:
+            for line in f:
+                m = _re.match(r'^\s*package\s+([\w.]+)\s*;', line)
+                if m:
+                    pkg = m.group(1)
+                    break
+    except Exception:
+        pass
+
+    if pkg:
+        seed_dir = os.path.join(seed_base, pkg.replace('.', os.sep))
+    else:
+        seed_dir = seed_base
+    os.makedirs(seed_dir, exist_ok=True)
+
+    seeded_count = 0
+    for chromo in gen.chromosomes:
+        test_path = chromo.test_file_path
+        if test_path and os.path.isfile(test_path):
+            dest = os.path.join(seed_dir, f"{class_name}Test_seed{chromo.thread_id}.java")
+            try:
+                content = open(test_path, 'r').read()
+                # Rename the class so each seed has a unique class name
+                old_cls = f"{class_name}Test"
+                new_cls = f"{class_name}Test_seed{chromo.thread_id}"
+                content = content.replace(f"class {old_cls}", f"class {new_cls}")
+                with open(dest, 'w') as f:
+                    f.write(content)
+                seeded_count += 1
+            except Exception:
+                pass
+
+    print(f"[EvoGPT+EvoSuite] Phase 2: Seeding EvoSuite with {seeded_count} LLM tests")
+
+    # Phase 3: Run EvoSuite with seeds
+    runner = EvoSuiteRunner(
+        project_name=project,
+        class_path_source=class_path,
+        output_base_dir=output_dir,
+    )
+
+    print(f"[EvoGPT+EvoSuite] Phase 3: EvoSuite evolution (budget={budget} {budget_type})")
+
+    evo_start = time.time()
+    test_file = runner.generate_tests(
+        budget=budget, budget_type=budget_type, seed_dir=seed_base,
+    )
+    evo_elapsed = time.time() - evo_start
+    total_elapsed = time.time() - start
+
+    print(f"[EvoGPT+EvoSuite] Done. LLM: {llm_elapsed:.1f}s, EvoSuite: {evo_elapsed:.1f}s, Total: {total_elapsed:.1f}s")
+
+    return test_file, total_elapsed, runner.get_runtime_jar()
+
+
 def evaluate_test(project, source_path, test_file, work_dir, extra_cp=None):
     """Evaluate a test file and return metrics dict."""
     evaluator = TestEvaluator(
@@ -283,7 +405,7 @@ def print_results_table(results):
         print("No results to display.")
         return
 
-    header = f"{'Project':<20} {'Class':<20} {'Tool':<12} {'Budget':>8} {'Type':<12} {'Branch%':>9} {'Line%':>9} {'Mutation%':>11} {'Time(s)':>9}"
+    header = f"{'Project':<20} {'Class':<20} {'Tool':<18} {'Budget':>8} {'Type':<12} {'Branch%':>9} {'Line%':>9} {'Mutation%':>11} {'Time(s)':>9}"
     sep = "-" * len(header)
 
     print(f"\n{'='*len(header)}")
@@ -305,7 +427,7 @@ def print_results_table(results):
         elapsed = f"{r['elapsed']:.1f}" if r["elapsed"] is not None else "N/A"
         budget_str = str(r['budget'])
 
-        print(f"{r['project']:<20} {r['class']:<20} {r['tool']:<12} {budget_str:>8} {r['budget_type']:<12} {branch:>9} {line:>9} {mut:>11} {elapsed:>9}")
+        print(f"{r['project']:<20} {r['class']:<20} {r['tool']:<18} {budget_str:>8} {r['budget_type']:<12} {branch:>9} {line:>9} {mut:>11} {elapsed:>9}")
 
     print(f"{'='*len(header)}\n")
 
@@ -368,6 +490,9 @@ Examples:
     parser.add_argument("--skip-evogpt", action="store_true", help="Skip EvoGPT runs")
     parser.add_argument("--skip-evosuite", action="store_true", help="Skip EvoSuite runs")
     parser.add_argument("--skip-testart", action="store_true", help="Skip TestART baseline runs")
+    parser.add_argument("--skip-hybrid", action="store_true", help="Skip EvoGPT+EvoSuite hybrid runs")
+    parser.add_argument("--hybrid-population", type=int, default=5,
+                        help="Number of LLM threads for EvoGPT+EvoSuite hybrid seeding (default: 5)")
     parser.add_argument("--download-evosuite", action="store_true",
                         help="Download EvoSuite JARs and exit")
 
@@ -523,6 +648,50 @@ Examples:
                     traceback.print_exc()
                     _record({
                         "project": project, "class": class_name, "tool": "EvoSuite",
+                        "budget": budget, "budget_type": args.budget_type,
+                        "branch_coverage": None, "line_coverage": None,
+                        "mutation_score": None, "elapsed": None,
+                    })
+
+            # --- EvoGPT+EvoSuite Hybrid ---
+            if not args.skip_hybrid:
+                try:
+                    test_file, elapsed, runtime_jar = run_evogpt_seeded(
+                        class_path, project, budget, args.budget_type,
+                        args.hybrid_population, args.output_dir,
+                    )
+                    if test_file:
+                        work_dir = os.path.join(args.output_dir, "eval", "hybrid", project, class_name, f"{args.budget_type}_{budget}")
+                        compiled_source_dir = os.path.join(
+                            args.output_dir, "evosuite_runs", project, class_name,
+                            f"{args.budget_type}_{budget}", "compiled_source"
+                        )
+                        hybrid_extra_cp = compiled_source_dir if os.path.isdir(compiled_source_dir) else None
+                        metrics = evaluate_test(project, class_path, test_file, work_dir, extra_cp=hybrid_extra_cp)
+                        _record({
+                            "project": project,
+                            "class": class_name,
+                            "tool": "EvoGPT+EvoSuite",
+                            "budget": budget,
+                            "budget_type": args.budget_type,
+                            "branch_coverage": metrics["branch_coverage"] if metrics else None,
+                            "line_coverage": metrics["line_coverage"] if metrics else None,
+                            "mutation_score": metrics["test_strength"] if metrics else None,
+                            "elapsed": elapsed,
+                        })
+                    else:
+                        _record({
+                            "project": project, "class": class_name, "tool": "EvoGPT+EvoSuite",
+                            "budget": budget, "budget_type": args.budget_type,
+                            "branch_coverage": None, "line_coverage": None,
+                            "mutation_score": None, "elapsed": elapsed,
+                        })
+                except Exception as e:
+                    print(f"[EvoGPT+EvoSuite] FAILED for {class_name} budget={budget}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    _record({
+                        "project": project, "class": class_name, "tool": "EvoGPT+EvoSuite",
                         "budget": budget, "budget_type": args.budget_type,
                         "branch_coverage": None, "line_coverage": None,
                         "mutation_score": None, "elapsed": None,
