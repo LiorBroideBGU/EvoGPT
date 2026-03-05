@@ -4,7 +4,11 @@ from utils.function_utils import *
 from utils.java_executor import *
 
 class CoverageEnhancementAgent(UnitTestGenerator):
-    def __init__(self, api_key,model, temperature, java_file_path):
+    """
+    Coverage Enhancement Agent for evolutionary unit test generation.
+    """
+
+    def __init__(self, api_key: str, model: str, temperature: float, java_file_path: str):
         super().__init__(api_key, model, temperature)
         self.input_prompt = open(os.path.abspath(os.path.join("prompts", "coverage_enhancement_generator", "input_prompt.txt")),'r').read()
         self.system_prompt = open(os.path.abspath(os.path.join("prompts", "coverage_enhancement_generator", "system_prompt.txt")),'r').read()
@@ -13,6 +17,14 @@ class CoverageEnhancementAgent(UnitTestGenerator):
         self.java_file_path = java_file_path
 
     async def generation_repair_loop(self,coverage_metrics, missed_branches, iterations=4, thread_number=None):
+        """
+        Generates a coverage enhancement for the given class.
+        :param coverage_metrics: The coverage metrics
+        :param missed_branches: The missed branches
+        :param iterations: The number of iterations
+        :param thread_number: The thread number
+        :return: The coverage enhancement
+        """
         java_code = read_java_file_as_string(self.java_file_path)
         java_code = clean_java_code(java_code)
         # Use os.path.basename for cross-platform compatibility

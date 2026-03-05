@@ -10,7 +10,7 @@ import os
 import asyncio
 from typing import List, Tuple, Dict, Optional
 from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from config.config import API_KEY, MODEL
 from utils.function_utils import (
     extract_test_context,

@@ -1,13 +1,16 @@
 from llm_agents.llm_agent import LLMAgent
-from langchain.schema import SystemMessage
+from langchain_core.messages import SystemMessage
 from utils.function_utils import *
 from utils.java_executor import *
 from utils.dataset_utils import *
 
 
-
 class UnitTestGenerator(LLMAgent):
-    def __init__(self, api_key, model, temperature):
+    """
+    Unit Test Generator agent for evolutionary unit test generation.
+    """
+
+    def __init__(self, api_key: str, model: str, temperature: float):
         super().__init__(api_key, model, temperature)
         self.input_prompt = open(os.path.abspath(os.path.join("prompts", "unit_test_generator", "input_prompt.txt")),
                                  'r').read()
@@ -35,25 +38,28 @@ class UnitTestGenerator(LLMAgent):
             os.path.abspath(os.path.join("prompts", "unit_test_generator", "syntax_error_prompt.txt")), 'r').read()
 
     async def get_unit_test_for_class(self, session_id: str) -> str:
-        # Retrieve long-term memory specific to the session
-        long_term_memory = self.get_long_term_memory(session_id)
-
-        # Compose the prompt including the system message, long-term memory, and user input
+        """
+        Gets a unit test for the given class.
+        :param session_id: The session id
+        :return: The unit test
+        """
+        self.logger.debug(f"Getting unit test for class: {session_id}")
         system_message = SystemMessage(content=f"{self.system_prompt}")
-
-        # Get or create the message history for the session
         history = self.get_chat_history(session_id)
-
-        # Add system message and user prompt to the conversation
         messages = [system_message] + history.messages
         response = await self.chat_model.ainvoke(messages)
-
-        # Update the session chat history and long-term memory
         await history.add_assistant_message(response.content)
-
         return response.content
 
-    async def generation_repair_loop(self, java_file_path, project_id, iterations=4, thread_number=None):
+    async def generation_repair_loop(self, java_file_path: str, project_id: str, iterations: int = 4, thread_number: int = None):
+        """
+        Generates a unit test for the given class.
+        :param java_file_path: The path to the Java file
+        :param project_id: The project id
+        :param iterations: The number of iterations
+        :param thread_number: The thread number
+        :return: The unit test
+        """
         java_code = read_java_file_as_string(java_file_path)
         java_code = clean_java_code(java_code)
         public_methods_list = get_public_method_signatures(java_code)
