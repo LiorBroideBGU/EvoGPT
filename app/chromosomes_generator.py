@@ -2,24 +2,23 @@ from config.config import *
 from llm_agents.unit_test_generator import UnitTestGenerator
 from llm_agents.coverage_enhancement_agent import CoverageEnhancementAgent
 from llm_agents.plateau_escape_agent import PlateauEscapeAgent
-from utils.function_utils import extract_project_name
 from utils.java_executor import JavaExecutor
-from copy import deepcopy
 from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.function_utils import *
-# from sbst_agents.mutation_assertion_generator import MutationAssertionGenerator
 from llm_agents.mutation_assertion_generation_agent import MutationAssertionGenerator
 from utils.programmatic_mutator import ProgrammaticMutator
 import threading
 from app.chromosome import Chromosome
 import random
 import time
-import asyncio
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+import logging
+
 
 
 class ChromosomesGenerator:
-    def __init__(self, source_code_path, project_name, verbose=True):
+    def __init__(self, source_code_path: Path, project_name: str):
+        self.logger = logging.getLogger(__name__)
         self.source_code_path = source_code_path
         self.source_code_string = read_java_file_as_string(self.source_code_path)
         filename = os.path.basename(self.source_code_path)  # 'JsonArray.java'
@@ -28,33 +27,27 @@ class ChromosomesGenerator:
         self.chromosomes = []
         self.lock = threading.Lock()
         self.crossover_probability = 0.8
-        self.verbose = verbose
 
-    def _log(self, msg):
-        if self.verbose:
-            print(msg)
-
-    async def threaded_generation(self, thread_number, temperature, max_retries=3):
+    async def threaded_generation(self, thread_number: int, temperature: float, max_retries: int = 3):
         import sys as _sys
 
         for attempt in range(1, max_retries + 1):
             try:
-                self._log(f"Thread-{thread_number} starting (attempt {attempt}/{max_retries}) with temperature={temperature}")
+                self.logger.debug(f"Thread-{thread_number} starting (attempt {attempt}/{max_retries}) with temperature={temperature}")
 
                 unit_test_generator = UnitTestGenerator(api_key=API_KEY, model=MODEL, temperature=temperature)
-                java_file_path = self.source_code_path
                 project_id = self.project_name
 
                 # Generation + Repair loop (initial)
-                await unit_test_generator.generation_repair_loop(java_file_path=java_file_path, project_id=project_id,
+                await unit_test_generator.generation_repair_loop(java_file_path=self.source_code_path, project_id=project_id,
                                                            thread_number=thread_number)
 
                 # Verify the test compiles before proceeding to coverage
-                results_base = os.path.join(os.getcwd(), 'results', 'unit_tests', self.project_name, self.class_name, str(thread_number))
-                javafiles_dir = os.path.join(results_base, 'javafiles')
-                classfiles_dir = os.path.join(results_base, 'classfiles')
+                results_base = Path.cwd() / 'results' / 'unit_tests' / self.project_name / self.class_name / str(thread_number)
+                javafiles_dir = results_base / 'javafiles'
+                classfiles_dir = results_base / 'classfiles'
 
-                test_file = os.path.join(javafiles_dir, f'{self.class_name}Test.java')
+                test_file = javafiles_dir / f'{self.class_name}Test.java'
                 executor = JavaExecutor(test_file)
                 compiled, compile_err = executor.compile_java()
                 if not compiled:
@@ -82,7 +75,7 @@ class ChromosomesGenerator:
                         api_key=API_KEY,
                         model=MODEL,
                         temperature=temperature,
-                        java_file_path=java_file_path
+                        java_file_path=self.source_code_path
                     )
                     await test_enhancements.generation_repair_loop(coverage_metrics, missed_branches, thread_number=thread_number)
 
@@ -92,20 +85,16 @@ class ChromosomesGenerator:
                         os.path.join(javafiles_dir, f'{self.class_name}EnhancedTest.java'))
                     final_unit_test = merge_java_unit_tests(first_unit_test, enhanced_unit_test, f'{self.class_name}Test')
                 else:
-                    self._log(f"Thread-{thread_number} coverage report failed; skipping enhancement, using base test")
+                    self.logger.debug(f"Thread-{thread_number} coverage report failed; skipping enhancement, using base test")
                     final_unit_test = read_java_file_as_string(
                         os.path.join(javafiles_dir, f'{self.class_name}Test.java')
                     )
 
                 # Cleanup
-                test1_path = os.path.join(javafiles_dir, f'{self.class_name}Test.java')
-                test2_path = os.path.join(javafiles_dir, f'{self.class_name}EnhancedTest.java')
-                delete_file(test1_path)
-                delete_file(test2_path)
-                delete_file(classfiles_dir)
+                delete_paths([javafiles_dir / f'{self.class_name}Test.java', javafiles_dir / f'{self.class_name}EnhancedTest.java', classfiles_dir])
 
                 # Save final merged test
-                merged_path = os.path.join(javafiles_dir, f'{self.class_name}Test.java')
+                merged_path = javafiles_dir / f'{self.class_name}Test.java'
                 save_test_suite(final_unit_test, merged_path)
                 chromosome_path = javafiles_dir
                 with self.lock:
@@ -114,7 +103,8 @@ class ChromosomesGenerator:
 
                 with self.lock:
                     self.chromosomes.append(chromosome)
-                self._log(f"Agent-{thread_number} done, saved final test at: {merged_path}")
+                
+                self.logger.debug(f"Agent-{thread_number} done, saved final test at: {merged_path}")
                 return
 
             except Exception as e:
@@ -144,22 +134,22 @@ class ChromosomesGenerator:
             parents = random.choices(sorted_population, weights=probabilities, k=2)
         return parents[0], parents[1]
 
-    def save_chromosome_code(self, iteration, offspring1_code, offspring2_code):
-        base_path = os.path.join("results", "unit_tests", self.project_name, self.class_name,"offsprings", str(iteration))
+    def save_chromosome_code(self, iteration: int, offspring1_code: str, offspring2_code: str):
+        base_path = Path("results", "unit_tests", self.project_name, self.class_name, "offsprings", str(iteration))
         save_test_suite(offspring1_code,
-                        os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}Test.java"))
+                        base_path / "offspring1" / "javafiles" / f"{self.class_name}Test.java")
         save_test_suite(self.source_code_string,
-                        os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}.java"))
-        compile_code_from_path(os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}.java"))
-        compile_code_from_path(os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}Test.java"))
+                        base_path / "offspring1" / "javafiles" / f"{self.class_name}.java")
+        compile_code_from_path(base_path / "offspring1" / "javafiles" / f"{self.class_name}.java")
+        compile_code_from_path(base_path / "offspring1" / "javafiles" / f"{self.class_name}Test.java")
         save_test_suite(offspring2_code,
-                        os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}Test.java"))
+                        base_path / "offspring2" / "javafiles" / f"{self.class_name}Test.java")
         save_test_suite(self.source_code_string,
-                        os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}.java"))
-        compile_code_from_path(os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}.java"))
-        compile_code_from_path(os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}Test.java"))
+                        base_path / "offspring2" / "javafiles" / f"{self.class_name}.java")
+        compile_code_from_path(base_path / "offspring2" / "javafiles" / f"{self.class_name}.java")
+        compile_code_from_path(base_path / "offspring2" / "javafiles" / f"{self.class_name}Test.java")
 
-    def create_chromosome(self, base_path):
+    def create_chromosome(self, base_path: Path):
         return Chromosome(path=base_path)
 
     def compute_gen_fitness(self):
@@ -205,7 +195,7 @@ class ChromosomesGenerator:
         if not missed_branches_str:
             missed_branches_str = "No specific missed branches identified. Focus on improving overall coverage."
         
-        self._log(f"  Coverage gaps identified: {len(missed_branches)} missed branches")
+        self.logger.debug(f"Coverage gaps identified: {len(missed_branches)} missed branches")
         
         # Generate targeted test methods
         new_methods = await escape_agent.generate_targeted_tests(
@@ -219,7 +209,7 @@ class ChromosomesGenerator:
         )
         
         if not new_methods:
-            self._log("  No test methods generated by injection agents.")
+            self.logger.debug("No test methods generated by injection agents.")
             return
         
         # Get existing method names to avoid collisions
@@ -230,7 +220,7 @@ class ChromosomesGenerator:
         # Deduplicate methods across agents
         unique_methods = escape_agent.deduplicate_methods(new_methods, existing_names)
         
-        self._log(f"  Injecting {len(unique_methods)} unique test methods into best chromosome...")
+        self.logger.debug(f"Injecting {len(unique_methods)} unique test methods into best chromosome...")
         
         # Inject methods into the test file
         test_file_code = read_java_file_as_string(best_chromosome.test_file_path)
@@ -244,7 +234,7 @@ class ChromosomesGenerator:
         success, output = executor.compile_java()
         
         if not success:
-            self._log(f"  WARNING: Compilation failed after injection. Attempting to fix...")
+            self.logger.warning(f"Compilation failed after injection. Attempting to fix...")
             # Try to fix by removing failing tests
             current_code = read_java_file_as_string(best_chromosome.test_file_path)
             fixed_code = remove_junit_tests(current_code, output)
@@ -253,17 +243,17 @@ class ChromosomesGenerator:
             # Try compiling again
             success, output = executor.compile_java()
             if not success:
-                self._log(f"  ERROR: Could not fix compilation errors. Reverting to original.")
+                self.logger.error(f"Could not fix compilation errors. Reverting to original.")
                 save_test_suite(test_file_code, best_chromosome.test_file_path)
                 return
         
         # Recompute fitness for the modified chromosome
-        self._log(f"  Recomputing fitness for injected chromosome...")
+        self.logger.debug(f"Recomputing fitness for injected chromosome...")
         best_chromosome.code_length = len(read_java_file_as_string(best_chromosome.test_file_path))
         best_chromosome.compute_fitness()
         
-        self._log(f"  Injection successful! New fitness: {best_chromosome.fitness_score:.3f}")
-        self._log(f"  Branch: {best_chromosome.branch_coverage:.1f}%, Line: {best_chromosome.line_coverage:.1f}%, Mutation: {best_chromosome.mutation_score:.1f}%")
+        self.logger.debug(f"Injection successful! New fitness: {best_chromosome.fitness_score:.3f}")
+        self.logger.debug(f"Branch: {best_chromosome.branch_coverage:.1f}%, Line: {best_chromosome.line_coverage:.1f}%, Mutation: {best_chromosome.mutation_score:.1f}%")
 
     async def evolution_generation(self, max_generations=25, time_limit_seconds=None):
         if not self.chromosomes:
@@ -272,18 +262,18 @@ class ChromosomesGenerator:
         offspring_pairs_generated = 0
         best_initial = max(self.chromosomes, key=lambda c: c.fitness_score)
         evolution_start_time = time.time()
-        self._log(f"\n{'='*60}")
+        self.logger.debug(f"\n{'='*60}")
         if time_limit_seconds:
-            self._log(f"Starting Evolution: time limit {time_limit_seconds}s (max {max_generations} offspring pairs)")
+            self.logger.debug(f"Starting Evolution: time limit {time_limit_seconds}s (max {max_generations} offspring pairs)")
         else:
-            self._log(f"Starting Evolution: {max_generations} offspring pairs to generate")
-        self._log(f"Initial population size: {len(self.chromosomes)}")
-        self._log(f"Best initial fitness: {best_initial.fitness_score:.3f}")
+            self.logger.debug(f"Starting Evolution: {max_generations} offspring pairs to generate")
+        self.logger.debug(f"Initial population size: {len(self.chromosomes)}")
+        self.logger.debug(f"Best initial fitness: {best_initial.fitness_score:.3f}")
         if LLM_INJECTION_ENABLED:
-            self._log(f"LLM Injection: ENABLED (threshold={STAGNATION_THRESHOLD}, max={MAX_INJECTIONS}, agents=5)")
+            self.logger.debug(f"LLM Injection: ENABLED (threshold={STAGNATION_THRESHOLD}, max={MAX_INJECTIONS}, agents=5)")
         else:
-            self._log(f"LLM Injection: DISABLED")
-        self._log(f"{'='*60}\n")
+            self.logger.debug(f"LLM Injection: DISABLED")
+        self.logger.debug(f"{'='*60}\n")
         
         # CodaMosa-style stagnation tracking
         stagnation_counter = 0
@@ -292,10 +282,10 @@ class ChromosomesGenerator:
         
         while offspring_pairs_generated < max_generations:
             if time_limit_seconds and (time.time() - evolution_start_time) >= time_limit_seconds:
-                self._log(f"Time limit ({time_limit_seconds}s) reached after {offspring_pairs_generated} offspring pairs.")
+                self.logger.debug(f"Time limit ({time_limit_seconds}s) reached after {offspring_pairs_generated} offspring pairs.")
                 break
             if max(self.chromosomes, key=lambda c: c.fitness_score).fitness_score == float(100):
-                self._log(f"Perfect fitness (100.0) achieved after {offspring_pairs_generated} offspring pairs!")
+                self.logger.debug(f"Perfect fitness (100.0) achieved after {offspring_pairs_generated} offspring pairs!")
                 return max(self.chromosomes, key=lambda c: c.fitness_score)
             
             parent1, parent2 = self.select_two_parents()
@@ -306,9 +296,9 @@ class ChromosomesGenerator:
                 else:
                     offspring1_code, offspring2_code = read_java_file_as_string(parent1.test_file_path), read_java_file_as_string(parent2.test_file_path)
                 self.save_chromosome_code(offspring_pairs_generated, offspring1_code, offspring2_code)
-                base_path = os.path.join("results", "unit_tests", self.project_name, self.class_name,"offsprings", str(offspring_pairs_generated))
-                offspring1 = self.create_chromosome(os.path.join(base_path, "offspring1", "javafiles"))
-                offspring2 = self.create_chromosome(os.path.join(base_path, "offspring2", "javafiles"))
+                base_path = Path("results", "unit_tests", self.project_name, self.class_name,"offsprings", str(offspring_pairs_generated))
+                offspring1 = self.create_chromosome(base_path / "offspring1" / "javafiles")
+                offspring2 = self.create_chromosome(base_path / "offspring2" / "javafiles")
 
                 # Select mutation strategy based on configuration
                 if MUTATION_STRATEGY == 'llm':
@@ -316,25 +306,25 @@ class ChromosomesGenerator:
                         api_key=API_KEY,
                         model=MODEL,
                         temperature=TEMPERATURE,
-                        unit_test_path=os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}Test.java"),
-                        source_code_path=os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}.java")
+                        unit_test_path=base_path / "offspring1" / "javafiles" / f"{self.class_name}Test.java",
+                        source_code_path=base_path / "offspring1" / "javafiles" / f"{self.class_name}.java"
                     )
                     off_2_mag = MutationAssertionGenerator(
                         api_key=API_KEY,
                         model=MODEL,
                         temperature=TEMPERATURE,
-                        unit_test_path=os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}Test.java"),
-                        source_code_path=os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}.java")
+                        unit_test_path=base_path / "offspring2" / "javafiles" / f"{self.class_name}Test.java",
+                        source_code_path=base_path / "offspring2" / "javafiles" / f"{self.class_name}.java"
                     )
                 elif MUTATION_STRATEGY == 'programmatic':
                     off_1_mag = ProgrammaticMutator(
-                        unit_test_path=os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}Test.java"),
-                        source_code_path=os.path.join(base_path, "offspring1", "javafiles", f"{self.class_name}.java"),
+                        unit_test_path=base_path/ "offspring1" / "javafiles" / f"{self.class_name}Test.java",
+                        source_code_path=base_path/ "offspring1" / "javafiles" / f"{self.class_name}.java",
                         mutation_probability=PROGRAMMATIC_MUTATION_PROBABILITY
                     )
                     off_2_mag = ProgrammaticMutator(
-                        unit_test_path=os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}Test.java"),
-                        source_code_path=os.path.join(base_path, "offspring2", "javafiles", f"{self.class_name}.java"),
+                        unit_test_path=base_path/ "offspring2" / "javafiles" / f"{self.class_name}Test.java",
+                        source_code_path=base_path/ "offspring2" / "javafiles" / f"{self.class_name}.java",
                         mutation_probability=PROGRAMMATIC_MUTATION_PROBABILITY
                     )
                 else:
@@ -386,10 +376,10 @@ class ChromosomesGenerator:
                     stagnation_counter >= STAGNATION_THRESHOLD and 
                     injection_count < MAX_INJECTIONS):
                     
-                    self._log(f"\n{'='*60}")
-                    self._log(f"STAGNATION DETECTED after {stagnation_counter} iterations without improvement!")
-                    self._log(f"Triggering CodaMosa-style LLM injection #{injection_count + 1}/{MAX_INJECTIONS}...")
-                    self._log(f"{'='*60}")
+                    self.logger.debug(f"\n{'='*60}")
+                    self.logger.debug(f"STAGNATION DETECTED after {stagnation_counter} iterations without improvement!")
+                    self.logger.debug(f"Triggering CodaMosa-style LLM injection #{injection_count + 1}/{MAX_INJECTIONS}...")
+                    self.logger.debug(f"{'='*60}")
                     
                     try:
                         await self._inject_llm_tests(current_best)
@@ -398,9 +388,9 @@ class ChromosomesGenerator:
                         # Update best fitness after injection
                         new_best = max(self.chromosomes, key=lambda c: c.fitness_score)
                         last_best_fitness = new_best.fitness_score
-                        self._log(f"Injection complete. New best fitness: {new_best.fitness_score:.3f}")
+                        self.logger.debug(f"Injection complete. New best fitness: {new_best.fitness_score:.3f}")
                     except Exception as inject_error:
-                        self._log(f"LLM injection failed: {inject_error}")
+                        self.logger.debug(f"LLM injection failed: {inject_error}")
                         stagnation_counter = 0  # Reset to avoid repeated failures
                 
                 # Print progress every 5 offspring pairs
@@ -408,10 +398,10 @@ class ChromosomesGenerator:
                     best_current = max(self.chromosomes, key=lambda c: c.fitness_score)
                     avg_fitness = sum(c.fitness_score for c in self.chromosomes) / len(self.chromosomes)
                     stagnation_info = f", stagnation={stagnation_counter}" if LLM_INJECTION_ENABLED else ""
-                    self._log(f"Offspring pairs: {offspring_pairs_generated}/{max_generations} - Best: {best_current.fitness_score:.3f}, Avg: {avg_fitness:.3f}, Pop size: {len(self.chromosomes)}{stagnation_info}")
+                    self.logger.debug(f"Offspring pairs: {offspring_pairs_generated}/{max_generations} - Best: {best_current.fitness_score:.3f}, Avg: {avg_fitness:.3f}, Pop size: {len(self.chromosomes)}{stagnation_info}")
                 
             except Exception as e:
-                self._log(f"Error generating offspring pair {offspring_pairs_generated}: {e}")
+                self.logger.debug(f"Error generating offspring pair {offspring_pairs_generated}: {e}")
                 offspring_pairs_generated += 1  # Count failed attempts too
         
         # Ensure best initial is preserved
@@ -419,12 +409,12 @@ class ChromosomesGenerator:
             self.chromosomes.append(best_initial)
         
         final_best = max(self.chromosomes, key=lambda c: c.fitness_score)
-        self._log(f"\n{'='*60}")
-        self._log(f"Evolution Complete!")
-        self._log(f"Generated {offspring_pairs_generated} offspring pairs")
-        self._log(f"Final population size: {len(self.chromosomes)}")
-        self._log(f"Final best fitness: {final_best.fitness_score:.3f}")
-        self._log(f"{'='*60}\n")
+        self.logger.debug(f"\n{'='*60}")
+        self.logger.debug(f"Evolution Complete!")
+        self.logger.debug(f"Generated {offspring_pairs_generated} offspring pairs")
+        self.logger.debug(f"Final population size: {len(self.chromosomes)}")
+        self.logger.debug(f"Final best fitness: {final_best.fitness_score:.3f}")
+        self.logger.debug(f"{'='*60}\n")
         return final_best
 
     async def generate_final_unit_test(self, n_chromosomes=30, max_generations=25, time_limit_seconds=None):
@@ -437,11 +427,11 @@ class ChromosomesGenerator:
             for i, temp in enumerate(temperatures)
         ]
         await asyncio.gather(*tasks)
-        self._log(f"All async agents finished. Population size: {len(self.chromosomes)}")
+        self.logger.debug(f"All async agents finished. Population size: {len(self.chromosomes)}")
         final = await self.evolution_generation(max_generations=max_generations, time_limit_seconds=time_limit_seconds)
 
-        self._log(f"BEST CHROMOSOME: {final}")
-        self._log(
+        self.logger.debug(f"BEST CHROMOSOME: {final}")
+        self.logger.debug(
             f"Line coverage: {final.line_coverage}, Branch coverage: {final.branch_coverage}, Mutation Score: {final.mutation_score}, Test Strength: {final.tests_strength}")
 
         # Save only the best chromosome's test suite and clean up everything else
@@ -469,7 +459,7 @@ class ChromosomesGenerator:
             for search_path in search_paths:
                 best_test_content = read_java_file_as_string(search_path)
                 if best_test_content is not None:
-                    self._log(f"Found test file at alternate location: {search_path}")
+                    self.logger.debug(f"Found test file at alternate location: {search_path}")
                     break
             
             if best_test_content is None:
@@ -492,7 +482,7 @@ class ChromosomesGenerator:
         save_test_suite(best_test_content, temp_test_backup)
         save_test_suite(source_code_content, temp_source_backup)
         
-        self._log(f"Saving best test suite and cleaning up...")
+        self.logger.debug(f"Saving best test suite and cleaning up...")
         
         # Delete the entire results directory for this project and class
         project_results_dir = os.path.join("results", "unit_tests", self.project_name, self.class_name)
@@ -500,12 +490,12 @@ class ChromosomesGenerator:
             from config.config import PRESERVE_INITIAL_POOL
             if not PRESERVE_INITIAL_POOL:
                 shutil.rmtree(project_results_dir)
-                self._log(f"Cleaned up temporary files from: {project_results_dir}")
+                self.logger.debug(f"Cleaned up temporary files from: {project_results_dir}")
             else:
                 offsprings_dir = os.path.join(project_results_dir, "offsprings")
                 if os.path.exists(offsprings_dir):
                     shutil.rmtree(offsprings_dir)
-                self._log(f"Preserved initial pool at: {project_results_dir}")
+                self.logger.debug(f"Preserved initial pool at: {project_results_dir}")
         
         # Recreate the final directory
         os.makedirs(final_dir, exist_ok=True)
@@ -517,11 +507,11 @@ class ChromosomesGenerator:
         # Remove temporary backup
         shutil.rmtree(temp_backup_dir)
         
-        self._log(f"Saved best test suite to: {final_test_path}")
-        self._log(f"Fitness: {best_chromosome.fitness_score:.3f} "
-                   f"(branch={best_chromosome.branch_coverage:.1f}%, "
-                   f"line={best_chromosome.line_coverage:.1f}%, "
-                   f"mutation={best_chromosome.mutation_score:.1f}%)")
+        self.logger.debug(f"Saved best test suite to: {final_test_path}")
+        self.logger.debug(f"Fitness: {best_chromosome.fitness_score:.3f} "
+                          f"(branch={best_chromosome.branch_coverage:.1f}%, "
+                          f"line={best_chromosome.line_coverage:.1f}%, "
+                          f"mutation={best_chromosome.mutation_score:.1f}%)")
 
 if __name__ == '__main__':
     temperatures = [0.25]

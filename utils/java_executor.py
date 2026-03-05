@@ -2,18 +2,21 @@ import os
 import subprocess
 import javalang
 from config.config import JAVA_BIN, JAVAC_BIN
+from pathlib import Path
+
 
 class JavaExecutor:
-    def __init__(self, java_file_path):
-        self.java_file_path = java_file_path
-        self.classpath = os.path.abspath(os.path.join("lib", "jars"))
-        jar_files = [f for f in os.listdir(self.classpath) if f.endswith('.jar')]
+    def __init__(self, java_file_path: Path | str):
+        self.java_file_path = Path(java_file_path)
 
-        # Construct the classpath by joining all JAR files
-        self.classpath = os.pathsep.join([os.path.join(self.classpath, jar) for jar in jar_files])
-        with open(self.java_file_path, "r", encoding="utf-8") as file:
+        jars_dir = Path("lib", "jars")
+        jar_files = [p for p in jars_dir.iterdir() if p.is_file() and p.suffix == ".jar"]
+        # Classpath as OS-specific path separator–joined string
+        self.classpath = os.pathsep.join(str(p) for p in jar_files)
+
+        with self.java_file_path.open("r", encoding="utf-8") as file:
             self.java_code = file.read()
-        self.java_file_name = os.path.basename(java_file_path).replace(".java", "")
+        self.java_file_name = self.java_file_path.stem
 
     def check_java_code_syntax(self):
         """
@@ -34,18 +37,18 @@ class JavaExecutor:
         """
         try:
             source_code_name = self.java_file_name.replace("Test", "")
-            build_path = os.path.join(os.path.dirname(self.java_file_path))
-            build_path = os.path.dirname(build_path)
-            output_dir = f"{build_path}\\classfiles"
-            os.makedirs(output_dir, exist_ok=True)
+            # .../<ClassName>/<thread>/javafiles -> build under sibling classfiles
+            build_path = self.java_file_path.parent.parent
+            output_dir = build_path / "classfiles"
+            output_dir.mkdir(parents=True, exist_ok=True)
             result = subprocess.run(
                 [
                     JAVAC_BIN,  # Explicitly use Java 8's `javac`
                     # "-source", "1.8",
                     # "-target", "1.8",
                     "-cp", self.classpath,
-                    self.java_file_path,
-                    "-d", output_dir,
+                    str(self.java_file_path),
+                    "-d", str(output_dir),
 
                 ],
                 capture_output=True,
@@ -69,16 +72,15 @@ class JavaExecutor:
 
             # Compile the Java file
             source_code_name = self.java_file_name.replace("Test", "")
-            build_path = os.path.join(os.path.dirname(self.java_file_path))
-            build_path = os.path.dirname(build_path)
-            output_dir = os.path.join(build_path, "classfiles")
-            os.makedirs(output_dir, exist_ok=True)
+            build_path = self.java_file_path.parent.parent
+            output_dir = build_path / "classfiles"
+            output_dir.mkdir(parents=True, exist_ok=True)
             compile_result = subprocess.run(
                 [
                     JAVAC_BIN,
                     "-cp", self.classpath,
-                    "-d", output_dir,
-                    self.java_file_path
+                    "-d", str(output_dir),
+                    str(self.java_file_path),
                 ],
                 capture_output=True,
                 text=True
@@ -91,7 +93,7 @@ class JavaExecutor:
             result = subprocess.run(
                 [
                     JAVA_BIN,
-                    "-cp", f"{output_dir}{os.pathsep}{self.classpath}",
+                    "-cp", f"{str(output_dir)}{os.pathsep}{self.classpath}",
                     "org.junit.runner.JUnitCore",
                     self.java_file_name
                 ],

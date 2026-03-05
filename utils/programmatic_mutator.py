@@ -10,6 +10,7 @@ from utils.function_utils import *
 from utils.java_executor import JavaExecutor
 import random
 import re
+from pathlib import Path
 
 
 class ProgrammaticMutator:
@@ -27,7 +28,7 @@ class ProgrammaticMutator:
         mutation_probability: Probability of mutating each test method (default: 0.3)
     """
     
-    def __init__(self, unit_test_path, source_code_path, mutation_probability=0.3):
+    def __init__(self, unit_test_path: Path, source_code_path: Path, mutation_probability: float = 0.3):
         """
         Initialize the programmatic mutator.
         
@@ -39,7 +40,7 @@ class ProgrammaticMutator:
         self.unit_test_path = unit_test_path
         self.source_code_path = source_code_path
         self.mutation_probability = mutation_probability
-        self.unit_test_java_executor = JavaExecutor(java_file_path=unit_test_path)
+        self.unit_test_java_executor = JavaExecutor(java_file_path=self.unit_test_path)
     
     def extract_test_methods(self, code: str):
         """

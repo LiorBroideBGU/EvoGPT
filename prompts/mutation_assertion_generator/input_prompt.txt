@@ -1,8 +1,0 @@
-Below is a Java test method. Please enhance it by adding 1–3 meaningful assertions as per the instructions above.
-
-### Test Method:
-{}
-### Class under test:
-{}
-### Helper methods / Imported utilities (If any):
-{}

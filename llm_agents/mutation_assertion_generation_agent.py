@@ -6,7 +6,8 @@ from utils.function_utils import *
 from utils.java_executor import *
 import random
 from config.config import *
-
+from pathlib import Path
+from prompts.mutatation_assertion_generator_prompts import *
 
 
 class MutationAssertionGenerator(LLMAgent):
@@ -14,13 +15,11 @@ class MutationAssertionGenerator(LLMAgent):
     Mutation Assertion Generator agent for evolutionary unit test generation.
     """
 
-    def __init__(self,api_key: str, model: str, temperature: float, unit_test_path: str, source_code_path: str):
+    def __init__(self,api_key: str, model: str, temperature: float, unit_test_path: Path, source_code_path: Path):
         super().__init__(api_key, model, temperature)
         self.unit_test_path = unit_test_path
         self.source_code_path = source_code_path
         self.unit_test_java_executor = JavaExecutor(java_file_path=unit_test_path)
-        self.system_prompt = open(os.path.abspath(os.path.join("prompts", "mutation_assertion_generator", "system_prompt.txt")),'r').read()
-        self.input_prompt = open(os.path.abspath(os.path.join("prompts", "mutation_assertion_generator", "input_prompt.txt")),'r').read()
 
     def extract_test_methods(self, code: str):
         """
@@ -83,7 +82,7 @@ class MutationAssertionGenerator(LLMAgent):
         long_term_memory = self.get_long_term_memory('session1')
 
         # Compose the prompt including the system message, long-term memory, and user input
-        system_message = SystemMessage(content=f"{self.system_prompt}")
+        system_message = SystemMessage(content=f"{SYSTEM_PROMPT}")
 
         # Get or create the message history for the session
         history = self.get_chat_history('session1')
@@ -153,7 +152,7 @@ class MutationAssertionGenerator(LLMAgent):
             if random.random() <= 1/num_of_test_methods:
                 fields = self.get_fields(old_java_source_code)
                 imports = self.get_imports(old_java_source_code)
-                self.update_long_term_memory('session1', self.input_prompt.format(test_method, old_java_source_code, f"Fields: {fields}, Imports: {imports}"))
+                self.update_long_term_memory('session1', INPUT_PROMPT.format(test_method, old_java_source_code, f"Fields: {fields}, Imports: {imports}"))
                 new_test_method =  await self.get_model_response()
                 new_unit_test = self.replace_test_method(old_unit_test, new_test_method)
                 save_test_suite(new_unit_test, self.unit_test_path)

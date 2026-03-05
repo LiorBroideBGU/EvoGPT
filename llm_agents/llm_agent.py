@@ -6,7 +6,7 @@ import logging
 
 
 class LLMAgent:
-    def __init__(self, api_key: str, model: str, temperature: float, is_local: bool = True):
+    def __init__(self, api_key: str, model: str, temperature: float, is_local: bool = False):
         self.logger = logging.getLogger(__name__)
         self.chat_store = {}
         self.long_term_memory = {}

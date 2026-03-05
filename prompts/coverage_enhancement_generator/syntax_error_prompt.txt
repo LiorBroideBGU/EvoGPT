@@ -1,3 +1,0 @@
-Unit Test have syntax error. Make sure the code is valid syntactically according to Java coding standards.
-The syntax error:
-{}

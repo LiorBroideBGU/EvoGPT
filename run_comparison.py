@@ -15,12 +15,18 @@ import os
 import shutil
 import sys
 import time
+import logging
+from pathlib import Path
 
 from utils.EvoSuiteRunner.evosuite_runner import EvoSuiteRunner, download_evosuite_jars
 from utils.test_evaluator import TestEvaluator
 from utils.dataset_utils import is_focal_class
 from utils.function_utils import read_java_file_as_string
 
+
+from app.chromosomes_generator import ChromosomesGenerator
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def run_evogpt(class_path, project, budget, budget_type, population, output_dir):
     """
@@ -39,15 +45,9 @@ def run_evogpt(class_path, project, budget, budget_type, population, output_dir)
         cfg.EVO_POPULATION = population
         time_limit = budget
 
-    from app.chromosomes_generator import ChromosomesGenerator
+    gen = ChromosomesGenerator(project_name=project, source_code_path=Path(class_path))
 
-    gen = ChromosomesGenerator(project_name=project, source_code_path=class_path, verbose=False)
-
-    print(f"\n{'='*60}")
-    print(f"[EvoGPT] Running: {class_path}")
-    print(f"[EvoGPT] Budget: {budget} ({budget_type}), Population: {population}")
-    print(f"{'='*60}")
-
+    logger.info(f"\n{'='*60}\n [EvoGPT] Running: {class_path} Budget: {budget} ({budget_type}), Population: {population} \n{'='*60}")
     start = time.time()
 
     async def _run():
@@ -81,21 +81,21 @@ def run_evogpt(class_path, project, budget, budget_type, population, output_dir)
 
     elapsed = time.time() - start
 
-    class_name = os.path.splitext(os.path.basename(class_path))[0]
-    result_test = os.path.join("results", "unit_tests", project, class_name, f"{class_name}Test.java")
+    class_name = Path(class_path).stem
+    result_test = Path("results", "unit_tests", project, class_name, f"{class_name}Test.java")
 
-    if not os.path.exists(result_test):
-        print(f"[EvoGPT] No test generated at {result_test}")
+    if not result_test.exists():
+        logger.info(f"[EvoGPT] No test generated at {result_test}")
         return None, elapsed
 
-    dest_dir = os.path.join(output_dir, "evogpt_tests", project, class_name, f"{budget_type}_{budget}")
-    os.makedirs(dest_dir, exist_ok=True)
-    dest_file = os.path.join(dest_dir, f"{class_name}Test.java")
+    dest_dir = Path(output_dir, "evogpt_tests", project, class_name, f"{budget_type}_{budget}")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_file = dest_dir / f"{class_name}Test.java"
     shutil.copy(result_test, dest_file)
 
-    source_in_results = os.path.join("results", "unit_tests", project, class_name, f"{class_name}.java")
-    if os.path.exists(source_in_results):
-        shutil.copy(source_in_results, os.path.join(dest_dir, f"{class_name}.java"))
+    source_in_results = Path("results", "unit_tests", project, class_name, f"{class_name}.java")
+    if source_in_results.exists():
+        shutil.copy(source_in_results, dest_dir / f"{class_name}.java")
 
     return dest_file, elapsed
 
@@ -106,17 +106,16 @@ def run_testart(class_path, project, output_dir):
     Uses the same generation pipeline as one EvoGPT chromosome.
     """
     import config.config as cfg
+    import logging
     cfg.CLASS_PATH = class_path
     cfg.PROJECT = project
 
-    from app.chromosomes_generator import ChromosomesGenerator
 
-    gen = ChromosomesGenerator(project_name=project, source_code_path=class_path, verbose=False)
+
+    gen = ChromosomesGenerator(project_name=project, source_code_path=Path(class_path))
     class_name = gen.class_name
 
-    print(f"\n{'='*60}")
-    print(f"[TestART] Running: {class_path}")
-    print(f"{'='*60}")
+    logger.info(f"\n{'='*60}\n[TestART] Running: {class_path}\n{'='*60}")
 
     start = time.time()
 
@@ -146,26 +145,26 @@ def run_testart(class_path, project, output_dir):
     elapsed = time.time() - start
 
     if not gen.chromosomes:
-        print(f"[TestART] No test generated for {class_name}")
+        logger.info(f"[TestART] No test generated for {class_name}")
         return None, elapsed
 
     best = gen.chromosomes[0]
     result_test = best.test_file_path
 
     if not os.path.exists(result_test):
-        print(f"[TestART] No test file at {result_test}")
+        logger.info(f"[TestART] No test file at {result_test}")
         return None, elapsed
 
-    dest_dir = os.path.join(output_dir, "testart_tests", project, class_name)
-    os.makedirs(dest_dir, exist_ok=True)
-    dest_file = os.path.join(dest_dir, f"{class_name}Test.java")
+    dest_dir = Path(output_dir, "testart_tests", project, class_name)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_file = dest_dir / f"{class_name}Test.java"
     shutil.copy(result_test, dest_file)
 
-    source_in_results = os.path.join("results", "unit_tests", project, class_name, f"{class_name}.java")
-    if os.path.exists(source_in_results):
-        shutil.copy(source_in_results, os.path.join(dest_dir, f"{class_name}.java"))
+    source_in_results = Path("results", "unit_tests", project, class_name, f"{class_name}.java")
+    if source_in_results.exists():
+        shutil.copy(source_in_results, dest_dir / f"{class_name}.java")
 
-    print(f"[TestART] Test: {dest_file} ({elapsed:.1f}s)")
+    logger.info(f"[TestART] Test: {dest_file} ({elapsed:.1f}s)")
     return dest_file, elapsed
 
 
@@ -179,10 +178,8 @@ def run_evosuite(class_path, project, budget, budget_type, output_dir):
         output_base_dir=output_dir,
     )
 
-    print(f"\n{'='*60}")
-    print(f"[EvoSuite] Running: {class_path}")
-    print(f"[EvoSuite] Budget: {budget} ({budget_type})")
-    print(f"{'='*60}")
+    logger.info(f"\n{'='*60}\n[EvoSuite] Running: {class_path}\n{'='*60}")
+    logger.info(f"[EvoSuite] Budget: {budget} ({budget_type})")
 
     start = time.time()
     test_file = runner.generate_tests(budget=budget, budget_type=budget_type)
@@ -206,10 +203,8 @@ def run_evogpt_seeded(class_path, project, budget, budget_type, population, outp
     gen = ChromosomesGenerator(project_name=project, source_code_path=class_path, verbose=False)
     class_name = gen.class_name
 
-    print(f"\n{'='*60}")
-    print(f"[EvoGPT+EvoSuite] Running: {class_path}")
-    print(f"[EvoGPT+EvoSuite] Phase 1: LLM population ({population} threads)")
-    print(f"{'='*60}")
+    logger.info(f"\n{'='*60}\n[EvoGPT+EvoSuite] Running: {class_path}\n{'='*60}")
+    logger.info(f"[EvoGPT+EvoSuite] Phase 1: LLM population ({population} threads)")
 
     start = time.time()
 
@@ -245,10 +240,10 @@ def run_evogpt_seeded(class_path, project, budget, budget_type, population, outp
     sys.stderr = _stderr
 
     llm_elapsed = time.time() - start
-    print(f"[EvoGPT+EvoSuite] Phase 1 done: {len(gen.chromosomes)} tests generated ({llm_elapsed:.1f}s)")
+    logger.info(f"[EvoGPT+EvoSuite] Phase 1 done: {len(gen.chromosomes)} tests generated ({llm_elapsed:.1f}s)")
 
     if not gen.chromosomes:
-        print("[EvoGPT+EvoSuite] No LLM tests generated, falling back to unseeded EvoSuite")
+        logger.info("[EvoGPT+EvoSuite] No LLM tests generated, falling back to unseeded EvoSuite")
         return run_evosuite(class_path, project, budget, budget_type, output_dir)
 
     # Phase 2: Collect LLM tests into a seed directory with package structure
@@ -290,7 +285,7 @@ def run_evogpt_seeded(class_path, project, budget, budget_type, population, outp
             except Exception:
                 pass
 
-    print(f"[EvoGPT+EvoSuite] Phase 2: Seeding EvoSuite with {seeded_count} LLM tests")
+    logger.info(f"[EvoGPT+EvoSuite] Phase 2: Seeding EvoSuite with {seeded_count} LLM tests")
 
     # Phase 3: Run EvoSuite with seeds
     runner = EvoSuiteRunner(
@@ -299,7 +294,7 @@ def run_evogpt_seeded(class_path, project, budget, budget_type, population, outp
         output_base_dir=output_dir,
     )
 
-    print(f"[EvoGPT+EvoSuite] Phase 3: EvoSuite evolution (budget={budget} {budget_type})")
+    logger.info(f"[EvoGPT+EvoSuite] Phase 3: EvoSuite evolution (budget={budget} {budget_type})")
 
     evo_start = time.time()
     test_file = runner.generate_tests(
@@ -308,7 +303,7 @@ def run_evogpt_seeded(class_path, project, budget, budget_type, population, outp
     evo_elapsed = time.time() - evo_start
     total_elapsed = time.time() - start
 
-    print(f"[EvoGPT+EvoSuite] Done. LLM: {llm_elapsed:.1f}s, EvoSuite: {evo_elapsed:.1f}s, Total: {total_elapsed:.1f}s")
+    logger.info(f"[EvoGPT+EvoSuite] Done. LLM: {llm_elapsed:.1f}s, EvoSuite: {evo_elapsed:.1f}s, Total: {total_elapsed:.1f}s")
 
     return test_file, total_elapsed, runner.get_runtime_jar()
 
@@ -325,39 +320,39 @@ def evaluate_test(project, source_path, test_file, work_dir, extra_cp=None):
 
 def _ensure_extracted(project_name, benchmarks_dir="benchmarks"):
     """Extract the project zip if the folder doesn't already exist."""
-    project_path = os.path.join(benchmarks_dir, project_name)
-    if os.path.isdir(project_path):
+    project_path = Path(benchmarks_dir, project_name)
+    if project_path.is_dir():
         return True
 
-    zip_path = os.path.join(benchmarks_dir, f"{project_name}.zip")
-    if not os.path.isfile(zip_path):
+    zip_path = Path(benchmarks_dir, f"{project_name}.zip")
+    if not zip_path.is_file():
         return False
 
     import zipfile
-    print(f"[discover] Extracting {zip_path} ...")
+    logger.info(f"[discover] Extracting {zip_path} ...")
     with zipfile.ZipFile(zip_path, "r") as zf:
         zf.extractall(benchmarks_dir)
-    return os.path.isdir(project_path)
+    return project_path.is_dir()
 
 
 def _find_source_root(project_name, benchmarks_dir="benchmarks"):
     """Locate the src/main/java root for a given benchmark project."""
-    project_path = os.path.join(benchmarks_dir, project_name)
-    if not os.path.isdir(project_path):
+    project_path = Path(benchmarks_dir, project_name)
+    if not project_path.is_dir():
         return None
 
     candidates = [
-        os.path.join(project_path, "src", "main", "java"),
-        os.path.join(project_path, "src", "java"),
+        project_path / "src" / "main" / "java",
+        project_path / "src" / "java",
     ]
     if project_name == "mockito":
-        candidates.insert(0, os.path.join(project_path, "mockito-core", "src", "main", "java"))
+        candidates.insert(0, project_path / "mockito-core" / "src" / "main" / "java")
     if project_name == "closure-compiler":
-        candidates.append(os.path.join(project_path, "src"))
+        candidates.append(project_path / "src")
 
     for path in candidates:
-        if os.path.isdir(path):
-            return path
+        if path.is_dir():
+            return str(path)
     return None
 
 
@@ -368,12 +363,12 @@ def discover_focal_classes(project_name, benchmarks_dir="benchmarks", limit=None
     Automatically extracts the project zip if the folder doesn't exist yet.
     """
     if not _ensure_extracted(project_name, benchmarks_dir):
-        print(f"[discover] No folder or zip found for project '{project_name}' under {benchmarks_dir}/")
+        logger.info(f"[discover] No folder or zip found for project '{project_name}' under {benchmarks_dir}/")
         return []
 
     source_root = _find_source_root(project_name, benchmarks_dir)
     if source_root is None:
-        print(f"[discover] Could not find source root for project '{project_name}' under {benchmarks_dir}/")
+        logger.info(f"[discover] Could not find source root for project '{project_name}' under {benchmarks_dir}/")
         return []
 
     focal_paths = []
@@ -389,12 +384,12 @@ def discover_focal_classes(project_name, benchmarks_dir="benchmarks", limit=None
             else:
                 skipped += 1
 
-    print(f"[discover] {project_name}: found {len(focal_paths)} focal classes "
+    logger.info(f"[discover] {project_name}: found {len(focal_paths)} focal classes "
           f"({skipped} skipped — interfaces / abstract / non-public)")
 
     if limit is not None and limit < len(focal_paths):
         focal_paths = focal_paths[:limit]
-        print(f"[discover] Limiting to first {limit} classes")
+        logger.info(f"[discover] Limiting to first {limit} classes")
 
     return focal_paths
 
@@ -434,7 +429,7 @@ def print_results_table(results):
 
 def save_csv(results, output_path):
     """Write results to CSV."""
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
         "project", "class", "tool", "budget", "budget_type",
         "branch_coverage", "line_coverage", "mutation_score", "elapsed",
@@ -518,8 +513,8 @@ Examples:
     else:
         parser.error("Provide --project (optionally with --class-path or --limit), or --batch-config")
 
-    os.makedirs(args.output_dir, exist_ok=True)
-    csv_path = os.path.join(args.output_dir, "results.csv")
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    csv_path = Path(args.output_dir) / "results.csv"
     all_results = []
 
     def _record(row):
@@ -529,7 +524,7 @@ Examples:
     for idx, target in enumerate(targets, 1):
         project = target["project"]
         class_path = target["class_path"]
-        class_name = os.path.splitext(os.path.basename(class_path))[0]
+        class_name = Path(class_path).stem
         print(f"\n[{idx}/{len(targets)}] Processing {class_name} ...")
 
         # --- TestART baseline (runs once per class, budget-independent) ---
