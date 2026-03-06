@@ -244,17 +244,30 @@ def save_test_suite(test_suite_code: str, test_file_path: Path | str):
 
 
 
-def extract_project_name(path: Path) -> Path:
+def extract_project_name(path: Path, root_hint: str | Path | None = None) -> Path:
     """
-    Given a path to a Java file inside a benchmarks project, return the
-    ``benchmarks/<project>`` directory as a Path.
+    Given a path to a Java file inside a project, return the project root directory
+    (e.g. benchmarks/<project> or output_dir/<project>) as a Path.
+
+    :param path: Path to a Java file.
+    :param root_hint: Root segment to search for (e.g. "benchmarks" or output dir).
+                     If None, uses config.PROJECT_ROOT or "benchmarks".
+    :return: Path to the project root (root + project name).
     """
+    if root_hint is None:
+        try:
+            import config.config as _cfg
+            root_hint = getattr(_cfg, "PROJECT_ROOT", "benchmarks")
+        except Exception:
+            root_hint = "benchmarks"
+
+    segment = Path(root_hint).name
     parts = path.parts
-    if "benchmarks" in parts:
-        idx = parts.index("benchmarks")
+    if segment in parts:
+        idx = parts.index(segment)
         if idx + 1 < len(parts):
             return Path(*parts[: idx + 2])
-    
+
     # Fallback: just return the parent directory
     return path.parent
 

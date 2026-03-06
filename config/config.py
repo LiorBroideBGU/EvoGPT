@@ -1,7 +1,8 @@
 API_KEY = '<your-api-key>'
 CLASS_PATH = 'benchmarks/gson/gson/src/main/java/com/google/gson/JsonArray.java'
+PROJECT_ROOT = 'benchmarks'  # Root for extract_project_name; main.py overrides when using --output-dir
 TEMPERATURE = 0.5
-MODEL = 'codellama:7b'
+MODEL = 'gpt-4o-mini'
 EVO_GENERATIONS = 25 # Change to your desired number of generations
 EVO_POPULATION = 25 # Change to your desired population size
 PROJECT = 'gson'

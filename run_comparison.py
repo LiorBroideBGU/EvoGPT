@@ -22,6 +22,7 @@ from utils.EvoSuiteRunner.evosuite_runner import EvoSuiteRunner, download_evosui
 from utils.test_evaluator import TestEvaluator
 from utils.dataset_utils import is_focal_class
 from utils.function_utils import read_java_file_as_string
+from utils.benchmark_utils import ensure_extracted, find_source_root
 
 
 from app.chromosomes_generator import ChromosomesGenerator
@@ -318,55 +319,18 @@ def evaluate_test(project, source_path, test_file, work_dir, extra_cp=None):
     return evaluator.evaluate(test_file, work_dir)
 
 
-def _ensure_extracted(project_name, benchmarks_dir="benchmarks"):
-    """Extract the project zip if the folder doesn't already exist."""
-    project_path = Path(benchmarks_dir, project_name)
-    if project_path.is_dir():
-        return True
-
-    zip_path = Path(benchmarks_dir, f"{project_name}.zip")
-    if not zip_path.is_file():
-        return False
-
-    import zipfile
-    logger.info(f"[discover] Extracting {zip_path} ...")
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(benchmarks_dir)
-    return project_path.is_dir()
-
-
-def _find_source_root(project_name, benchmarks_dir="benchmarks"):
-    """Locate the src/main/java root for a given benchmark project."""
-    project_path = Path(benchmarks_dir, project_name)
-    if not project_path.is_dir():
-        return None
-
-    candidates = [
-        project_path / "src" / "main" / "java",
-        project_path / "src" / "java",
-    ]
-    if project_name == "mockito":
-        candidates.insert(0, project_path / "mockito-core" / "src" / "main" / "java")
-    if project_name == "closure-compiler":
-        candidates.append(project_path / "src")
-
-    for path in candidates:
-        if path.is_dir():
-            return str(path)
-    return None
-
-
 def discover_focal_classes(project_name, benchmarks_dir="benchmarks", limit=None):
     """
     Walk a benchmark project's source tree and return class paths for every
     focal class (public, non-abstract, non-interface, with real public methods).
     Automatically extracts the project zip if the folder doesn't exist yet.
     """
-    if not _ensure_extracted(project_name, benchmarks_dir):
+    if not ensure_extracted(project_name, benchmarks_dir, target_dir=None):
         logger.info(f"[discover] No folder or zip found for project '{project_name}' under {benchmarks_dir}/")
         return []
 
-    source_root = _find_source_root(project_name, benchmarks_dir)
+    project_path = Path(benchmarks_dir) / project_name
+    source_root = find_source_root(project_path, project_name)
     if source_root is None:
         logger.info(f"[discover] Could not find source root for project '{project_name}' under {benchmarks_dir}/")
         return []
