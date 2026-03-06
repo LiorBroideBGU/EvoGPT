@@ -25,7 +25,6 @@
     "mode": null,
     "url": null,
     "output_dir": null,
-    "results_dir": null,
     "class_path": null
   },
 
@@ -43,7 +42,7 @@
     "skip_testart": false,
     "skip_hybrid": false,
     "hybrid_population": 5,
-    "download_evosuite": false,
-    "results_dir": null
-  }
+    "download_evosuite": false
+  },
+  "results_dir": null
 }

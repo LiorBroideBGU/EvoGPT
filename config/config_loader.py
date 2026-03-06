@@ -74,7 +74,7 @@ class Config:
             "hybrid_population": comp_data.get("hybrid_population", 5),
             "download_evosuite": comp_data.get("download_evosuite", False),
         }
-
+        self.results_dir = _get(data, "results_dir", None)
 
 _config: Config | None = None
 

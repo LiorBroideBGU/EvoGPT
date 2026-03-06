@@ -3,7 +3,7 @@
 Generate an sbatch job that runs main.py on a single benchmark project.
 
 Usage:
-  python run_single_project.py --project gson --class-path benchmarks/gson/gson/src/main/java/.../X.java
+  python run_single_project.py --project gson --class-path benchmarks/gson/src/main/java/.../X.java
   python run_single_project.py --project gson --class-path PATH [--submit]
 
 Assumption: Benchmarks are zipped (e.g. benchmarks/gson.zip) before execution.
@@ -110,8 +110,8 @@ def _create_project_config_json(
     # main.py extracts benchmarks when run.mode="local"; required when benchmarks are zipped
     cfg.setdefault("run", {})
     cfg["run"]["mode"] = "local"
-    cfg["run"]["output_dir"] = str((output_config_path.parent / "evogpt_extracted").resolve().as_posix())
-    cfg["results_dir"] = str((output_config_path.parent / "results").resolve().as_posix())
+    cfg["run"]["output_dir"] = str((output_config_path.parent.parent / "evogpt_extracted").resolve().as_posix())
+    cfg["results_dir"] = str((output_config_path.parent.parent / "results").resolve().as_posix())
 
     output_config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_config_path, "w", encoding="utf-8") as f:
@@ -235,7 +235,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--class-path",
         required=True,
-        help="Path to the Java class file under benchmarks/ (e.g. benchmarks/gson/gson/src/main/java/.../X.java). "
+        help="Path to the Java class file under benchmarks/ (e.g. benchmarks/gson/src/main/java/.../X.java). "
         "Required because benchmarks are zipped before execution; discovery is not possible.",
     )
     parser.add_argument("--config", default="config/config.json", help="Path to config JSON")

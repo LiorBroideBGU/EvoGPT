@@ -136,8 +136,8 @@ class ChromosomesGenerator:
             parents = random.choices(sorted_population, weights=probabilities, k=2)
         return parents[0], parents[1]
 
-    def save_chromosome_code(self, iteration: int, offspring1_code: str, offspring2_code: str):
-        base_path = Path("results", "unit_tests", self.project_name, self.class_name, "offsprings", str(iteration))
+    def save_chromosome_code(self, iteration: int, offspring1_code: str, offspring2_code: str, results_dir: str):
+        base_path = Path(results_dir) / "unit_tests" / self.project_name / self.class_name / "offsprings" / str(iteration)
         save_test_suite(offspring1_code,
                         base_path / "offspring1" / "javafiles" / f"{self.class_name}Test.java")
         save_test_suite(self.source_code_string,
@@ -299,8 +299,8 @@ class ChromosomesGenerator:
                     offspring1_code, offspring2_code = parent1.crossover(parent2)
                 else:
                     offspring1_code, offspring2_code = read_java_file_as_string(parent1.test_file_path), read_java_file_as_string(parent2.test_file_path)
-                self.save_chromosome_code(offspring_pairs_generated, offspring1_code, offspring2_code)
-                base_path = Path("results", "unit_tests", self.project_name, self.class_name,"offsprings", str(offspring_pairs_generated))
+                self.save_chromosome_code(offspring_pairs_generated, offspring1_code, offspring2_code, cfg.results_dir)
+                base_path = Path(cfg.results_dir) / "unit_tests" / self.project_name / self.class_name / "offsprings" / str(offspring_pairs_generated)
                 offspring1 = self.create_chromosome(base_path / "offspring1" / "javafiles")
                 offspring2 = self.create_chromosome(base_path / "offspring2" / "javafiles")
 
