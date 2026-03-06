@@ -149,7 +149,6 @@ def _create_sbatch_file(
     output_dir: Path,
     project_root: Path,
     *,
-    work_dir: str | None,
     conda_env: str,
     cpus: int,
     mem: str,
@@ -181,7 +180,7 @@ def _create_sbatch_file(
         job_name=f"evogpt-{project}",
         script="main.py",
         arguments=f"--config {config_rel}",
-        work_dir=work_dir or "${SLURM_SUBMIT_DIR}",
+        work_dir=str(Path(__file__).resolve().parent.parent.absolute()),
         cpus_per_task=cpus,
         mem=mem,
         conda_env=conda_env,
@@ -278,7 +277,7 @@ def main() -> int:
     _create_project_config_json(base_config, config_path, args.project, class_path)
 
     # Step 3: Create sbatch file
-    sbatch_path = _create_sbatch_file(args.project, config_path, output_dir, project_root, work_dir=args.work_dir, 
+    sbatch_path = _create_sbatch_file(args.project, config_path, output_dir, project_root, 
     conda_env=args.conda_env, cpus=args.cpus, mem=args.mem)
 
     print(f"Generated: {sbatch_path}")

@@ -128,7 +128,6 @@ def _create_sbatch_file(
     output_dir: Path,
     project_root: Path,
     *,
-    work_dir: str,
     cpus: int,
     mem: str,
     conda_env: str,
@@ -149,7 +148,7 @@ def _create_sbatch_file(
         job_name=f"comparison-{project}",
         script="run_comparison.py",
         arguments=f"--config {config_rel}",
-        work_dir=work_dir,
+        work_dir=str(Path(__file__).resolve().parent.parent.absolute()),
         cpus_per_task=cpus,
         mem=mem,
         conda_env=conda_env,
@@ -200,7 +199,6 @@ def _parse_args() -> argparse.Namespace:
         "--output-dir", type=Path, default=_SCRIPT_DIR / "jobs", help="Directory for generated sbatch and config files")
     parser.add_argument(
         "--comparison-output-dir", default="comparison_results", help="Base output directory for comparison results (per-project subdirs)")
-    parser.add_argument("--work-dir", help="Working directory on cluster (default: ${SLURM_SUBMIT_DIR})")
     parser.add_argument(
         "--conda-env", default="evogpt", help="Conda environment name")
     parser.add_argument("--submit", action="store_true", help="Submit all jobs with sbatch after generating")
@@ -235,7 +233,6 @@ def main() -> int:
 
     output_dir = args.output_dir.resolve()
     configs_dir = output_dir / "configs"
-    work_dir = args.work_dir or "${SLURM_SUBMIT_DIR}"
     job_ids: list[str] = []
 
     for project in projects:
@@ -251,7 +248,6 @@ def main() -> int:
             config_path,
             output_dir,
             project_root,
-            work_dir=work_dir,
             cpus=args.cpus,
             mem=args.mem,
             conda_env=args.conda_env,

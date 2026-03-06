@@ -28,15 +28,16 @@ echo "Job name is: ${job_name}"
 
 ${environment_variables}
 
-echo "${cluster_temp_logs_path}"
-mkdir ${cluster_temp_logs_path}/logs
-chmod -R 777 ${cluster_temp_logs_path}/logs
+mkdir -p ${cluster_temp_logs_path}/logs
+chmod -R 777 ${cluster_temp_logs_path}
+export LOGGING_DIRECTORY=${cluster_temp_logs_path}/logs
 
 
 ### Start your code below ####
 module load anaconda				### load anaconda module (must be present when working with conda environments)
 source activate ${conda_env}				### activate a conda environment, replace my_env with your conda environment
-cd ${work_dir} || exit 1				### change to project root directory
+echo $CONDA_DEFAULT_ENV     ### print the conda environment
+export PYTHONPATH=${work_dir}
 python ${script}	${arguments}			### this command executes python script – replace with your own command
 
 cp -r ${cluster_temp_logs_path}/logs/* ${logs_dir}		### copy logs to the logs directory

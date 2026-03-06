@@ -7,6 +7,7 @@ Usage:
 All settings (mode, url, output_dir, class_path) are read from the config file.
 """
 
+import os
 import argparse
 import asyncio
 import logging
@@ -23,6 +24,9 @@ def _setup_logging() -> logging.Logger:
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.RotatingFileHandler(f"{os.getenv('LOGGING_DIRECTORY', 'logs')}/evogpt.log", maxBytes=10*1024*1024, backupCount=5),
+        ],
     )
     logging.getLogger("httpcore").setLevel(logging.CRITICAL)
     return logging.getLogger(__name__)
@@ -110,7 +114,7 @@ def _resolve_paths_and_update_config(cfg, logger: logging.Logger) -> None:
 
     if mode is None:
         class_path, project = _resolve_direct_paths(cfg)
-        
+
     else:
         output_dir = Path(run["output_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)
