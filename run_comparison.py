@@ -587,7 +587,7 @@ def main() -> int:
         print("EvoSuite JARs downloaded successfully.")
         return 0
 
-    targets = _resolve_targets(cfg, logger)
+    targets = _resolve_targets(cfg)
     output_dir = comp["output_dir"]
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     csv_path = Path(output_dir) / "results.csv"
