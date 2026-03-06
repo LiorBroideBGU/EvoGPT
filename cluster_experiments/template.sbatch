@@ -31,7 +31,8 @@ ${environment_variables}
 mkdir -p ${cluster_temp_logs_path}/logs
 chmod -R 777 ${cluster_temp_logs_path}
 export LOGGING_DIRECTORY=${cluster_temp_logs_path}/logs
-
+mkdir -p ${logs_dir}
+chmod -R 777 ${logs_dir}
 
 ### Start your code below ####
 module load anaconda				### load anaconda module (must be present when working with conda environments)

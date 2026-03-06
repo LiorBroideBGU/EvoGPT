@@ -449,16 +449,16 @@ class ChromosomesGenerator:
         import shutil
         
         # Define final directory path
-        final_dir = os.path.join("results", "unit_tests", self.project_name, self.class_name)
-        final_test_path = os.path.join(final_dir, f"{self.class_name}Test.java")
+        final_dir = Path(cfg.results_dir) / "unit_tests" / self.project_name / self.class_name
+        final_test_path = final_dir / f"{self.class_name}Test.java"
         
         # Read the best chromosome's test suite - handle missing file
         best_test_content = read_java_file_as_string(best_chromosome.test_file_path)
         if best_test_content is None:
             # Try to find the test file by searching for it
             search_paths = [
-                os.path.join(os.path.dirname(best_chromosome.path), "javafiles", f"{self.class_name}Test.java"),
-                os.path.join(best_chromosome.path, f"{self.class_name}Test.java"),
+                best_chromosome.path / "javafiles" / f"{self.class_name}Test.java",
+                best_chromosome.path / f"{self.class_name}Test.java",
             ]
             for search_path in search_paths:
                 best_test_content = read_java_file_as_string(search_path)
@@ -474,13 +474,13 @@ class ChromosomesGenerator:
         
         # Get the source code path to save alongside (optional but useful)
         source_code_content = self.source_code_string
-        final_source_path = os.path.join(final_dir, f"{self.class_name}.java")
+        final_source_path = final_dir / f"{self.class_name}.java"
         
         # Create a temporary backup directory to store the best test before cleanup
-        temp_backup_dir = os.path.join("results", "unit_tests", f".temp_backup_{self.class_name}")
-        os.makedirs(temp_backup_dir, exist_ok=True)
-        temp_test_backup = os.path.join(temp_backup_dir, f"{self.class_name}Test.java")
-        temp_source_backup = os.path.join(temp_backup_dir, f"{self.class_name}.java")
+        temp_backup_dir = Path(cfg.results_dir) / "unit_tests" / f".temp_backup_{self.class_name}"
+        temp_backup_dir.mkdir(parents=True, exist_ok=True)
+        temp_test_backup = temp_backup_dir / f"{self.class_name}Test.java"
+        temp_source_backup = temp_backup_dir / f"{self.class_name}.java"
         
         # Save to temporary backup
         save_test_suite(best_test_content, temp_test_backup)
@@ -489,20 +489,20 @@ class ChromosomesGenerator:
         self.logger.debug(f"Saving best test suite and cleaning up...")
         
         # Delete the entire results directory for this project and class
-        project_results_dir = os.path.join("results", "unit_tests", self.project_name, self.class_name)
+        project_results_dir = Path(cfg.results_dir) / "unit_tests" / self.project_name / self.class_name
         if os.path.exists(project_results_dir):
             cfg = get_config()
             if not cfg.PRESERVE_INITIAL_POOL:
                 shutil.rmtree(project_results_dir)
                 self.logger.debug(f"Cleaned up temporary files from: {project_results_dir}")
             else:
-                offsprings_dir = os.path.join(project_results_dir, "offsprings")
+                offsprings_dir = project_results_dir / "offsprings"
                 if os.path.exists(offsprings_dir):
                     shutil.rmtree(offsprings_dir)
                 self.logger.debug(f"Preserved initial pool at: {project_results_dir}")
         
         # Recreate the final directory
-        os.makedirs(final_dir, exist_ok=True)
+        final_dir.mkdir(parents=True, exist_ok=True)
         
         # Move the best test from backup to final location
         shutil.copy(temp_test_backup, final_test_path)

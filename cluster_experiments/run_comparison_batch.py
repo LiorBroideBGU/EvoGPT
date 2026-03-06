@@ -98,6 +98,7 @@ def _create_comparison_config_json(
     comp["skip_evosuite"] = False
     comp["skip_testart"] = False
     comp["skip_hybrid"] = False
+    comp["results_dir"] = str((output_config_path.parent / "comparison_results").resolve().as_posix())
 
     output_config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_config_path, "w", encoding="utf-8") as f:

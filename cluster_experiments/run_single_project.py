@@ -110,7 +110,8 @@ def _create_project_config_json(
     # main.py extracts benchmarks when run.mode="local"; required when benchmarks are zipped
     cfg.setdefault("run", {})
     cfg["run"]["mode"] = "local"
-    cfg["run"]["output_dir"] = "evogpt_extracted"
+    cfg["run"]["output_dir"] = str((output_config_path.parent / "evogpt_extracted").resolve().as_posix())
+    cfg["results_dir"] = str((output_config_path.parent / "results").resolve().as_posix())
 
     output_config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_config_path, "w", encoding="utf-8") as f:

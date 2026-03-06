@@ -21,7 +21,7 @@ class Config:
         self.API_KEY = _get(data, "API_KEY", "<your-api-key>")
         self.CLASS_PATH = _get(
             data, "CLASS_PATH",
-            "benchmarks/gson/gson/src/main/java/com/google/gson/JsonArray.java"
+            "benchmarks/gson/src/main/java/com/google/gson/JsonArray.java"
         )
         self.PROJECT = _get(data, "PROJECT", "gson")
         self.PROJECT_ROOT = _get(data, "PROJECT_ROOT", "benchmarks")
