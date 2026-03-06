@@ -32,6 +32,7 @@ def ensure_extracted(project_name: str, benchmarks_dir: str = "benchmarks", targ
     logger.info(f"[discover] Extracting {zip_path} ...")
     with zipfile.ZipFile(zip_path, "r") as zf:
         zf.extractall(target)
+        
     return project_path.is_dir()
 
 

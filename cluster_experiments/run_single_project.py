@@ -3,16 +3,23 @@
 Generate an sbatch job that runs main.py on a single benchmark project.
 
 Usage:
-  python run_single_project.py --project gson [--class-path PATH] [--output-dir DIR]
-  python run_single_project.py --project gson --submit
+  python run_single_project.py --project gson --class-path benchmarks/gson/gson/src/main/java/.../X.java
+  python run_single_project.py --project gson --class-path PATH [--submit]
 
-Creates a job that runs EvoGPT (main.py) on the given project. If --class-path
-is not provided, discovers the first focal class in the project.
+Assumption: Benchmarks are zipped (e.g. benchmarks/gson.zip) before execution.
+Discovery of focal classes requires extracted sources, so --class-path is required.
+main.py will extract the benchmark at runtime (run.mode="local") before running.
+
+Flow:
+  1. Validate and normalize class path (must be under benchmarks/)
+  2. Create project-specific JSON config with run.mode=local  ← JSON creation
+  3. Create sbatch file from template                       ← sbatch creation
+  4. Optionally submit the job                              ← execution
 """
 
 import argparse
 import json
-import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,40 +36,106 @@ from cluster_experiments.sbatch_utils import (
 )
 
 
-def _discover_first_focal_class(project_name: str, benchmarks_dir: str = "benchmarks") -> str | None:
+# -----------------------------------------------------------------------------
+# Step 1: Class path validation and normalization
+# -----------------------------------------------------------------------------
+
+
+def _validate_and_normalize_class_path(
+    class_path_arg: str,
+    project_root: Path,
+) -> str:
     """
-    Discover the first focal class in the project.
-    Returns the absolute path to the class file, or None if not found.
+    Validate and normalize the Java class path.
+
+    The path must be under benchmarks/ so main.py can resolve it after
+    extraction (output_dir / path.relative_to('benchmarks')).
+
+    :param class_path_arg: User-provided class path (e.g. benchmarks/gson/.../X.java).
+    :param project_root: EvoGPT project root directory.
+    :return: Normalized path with forward slashes, relative to project root.
+    :raises SystemExit: If path is invalid or not under benchmarks/.
     """
-    try:
-        from utils.benchmark_utils import ensure_extracted, find_source_root
-        from utils.dataset_utils import is_focal_class
-        from utils.function_utils import read_java_file_as_string
-    except ImportError as e:
-        print(f"Note: Cannot discover focal classes (missing dependency: {e}). Use --class-path.")
-        return None
+    p = Path(class_path_arg)
+    if p.is_absolute():
+        try:
+            normalized = p.relative_to(project_root).as_posix()
+        except ValueError:
+            print(
+                f"ERROR: Class path must be under project root or benchmarks/: {class_path_arg}"
+            )
+            sys.exit(1)
+    else:
+        normalized = Path(class_path_arg).as_posix()
 
-    if not ensure_extracted(project_name, benchmarks_dir, target_dir=None):
-        return None
+    if not normalized.startswith("benchmarks/"):
+        print(
+            f"ERROR: Class path must start with 'benchmarks/' so main.py can resolve it "
+            f"after extraction. Got: {normalized}"
+        )
+        sys.exit(1)
 
-    project_path = Path(benchmarks_dir) / project_name
-    source_root = find_source_root(project_path, project_name)
-    if source_root is None:
-        return None
-
-    for root, _dirs, files in os.walk(source_root):
-        for fname in sorted(files):
-            if not fname.endswith(".java"):
-                continue
-            fpath = Path(root) / fname
-            code = read_java_file_as_string(str(fpath))
-            if code and is_focal_class(code):
-                return str(fpath.resolve())
-    return None
+    return normalized
 
 
-def _logs_dir_for_output(output_dir: Path, project: str, project_root: Path) -> str:
-    """Return logs dir path, relative to project root when possible (for cluster portability)."""
+# -----------------------------------------------------------------------------
+# Step 2: JSON config creation
+# -----------------------------------------------------------------------------
+
+
+def _create_project_config_json(
+    base_config_path: Path,
+    output_config_path: Path,
+    project: str,
+    class_path: str,
+) -> None:
+    """
+    Create a project-specific JSON config file.
+
+    Loads the base config, overrides PROJECT and CLASS_PATH, and configures
+    run.mode="local" with run.output_dir so main.py extracts the benchmark
+    from benchmarks/<project>.zip at runtime before running.
+
+    :param base_config_path: Path to config/config.json (or similar).
+    :param output_config_path: Where to write the project config (e.g. jobs/configs/config_gson.json).
+    :param project: Project name to set in config.
+    :param class_path: Class path under benchmarks/ (e.g. benchmarks/gson/.../X.java).
+    """
+    with open(base_config_path, encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    cfg["PROJECT"] = project
+    cfg["CLASS_PATH"] = class_path
+
+    # main.py extracts benchmarks when run.mode="local"; required when benchmarks are zipped
+    cfg.setdefault("run", {})
+    cfg["run"]["mode"] = "local"
+    cfg["run"]["output_dir"] = "evogpt_extracted"
+
+    output_config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_config_path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+
+
+# -----------------------------------------------------------------------------
+# Step 3: sbatch file creation
+# -----------------------------------------------------------------------------
+
+
+def _logs_dir_relative_to_project(
+    output_dir: Path, project: str, project_root: Path
+) -> str:
+    """
+    Compute logs directory path, relative to project root when possible.
+
+    Used for cluster portability: when the job runs, it cd's to project root,
+    so the cp command needs a path relative to that.
+
+    :param output_dir: Base output directory (e.g. cluster_experiments/jobs).
+    :param project: Project name.
+    :param project_root: EvoGPT project root.
+    :return: Path string with forward slashes.
+    """
     logs_path = output_dir / "logs" / project
     try:
         return logs_path.resolve().relative_to(project_root.resolve()).as_posix()
@@ -70,25 +143,87 @@ def _logs_dir_for_output(output_dir: Path, project: str, project_root: Path) -> 
         return str(logs_path)
 
 
-def _create_project_config(
-    base_config_path: Path,
-    output_config_path: Path,
+def _create_sbatch_file(
     project: str,
-    class_path: str,
-) -> None:
-    """Create a project-specific config file."""
-    with open(base_config_path, encoding="utf-8") as f:
-        cfg = json.load(f)
+    config_path: Path,
+    output_dir: Path,
+    project_root: Path,
+    *,
+    work_dir: str | None,
+    conda_env: str,
+    cpus: int,
+    mem: str,
+) -> Path:
+    """
+    Create the sbatch job file from the template.
 
-    cfg["PROJECT"] = project
-    cfg["CLASS_PATH"] = class_path
+    Substitutes placeholders in template.sbatch with project-specific values.
+    The generated file runs: cd work_dir && python main.py --config <config>.
 
-    output_config_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_config_path, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
+    :param project: Project name (e.g. gson).
+    :param config_path: Path to the project config JSON.
+    :param output_dir: Directory for generated files (e.g. cluster_experiments/jobs).
+    :param project_root: EvoGPT project root.
+    :param work_dir: Working directory on cluster (default: ${SLURM_SUBMIT_DIR}).
+    :param conda_env: Conda environment name.
+    :param cpus: CPUs per task.
+    :param mem: Memory allocation (e.g. 16G).
+    :return: Path to the created sbatch file.
+    """
+    try:
+        config_rel = config_path.resolve().relative_to(project_root.resolve()).as_posix()
+    except ValueError:
+        config_rel = Path(config_path).as_posix()
+
+    template = load_template()
+    content = substitute_template(
+        template,
+        job_name=f"evogpt-{project}",
+        script="main.py",
+        arguments=f"--config {config_rel}",
+        work_dir=work_dir or "${SLURM_SUBMIT_DIR}",
+        cpus_per_task=cpus,
+        mem=mem,
+        conda_env=conda_env,
+        cluster_temp_logs_path=f"/tmp/evogpt_{project}_${{SLURM_JOB_ID}}",
+        logs_dir=_logs_dir_relative_to_project(output_dir, project, project_root),
+    )
+
+    sbatch_path = output_dir / f"run_{project}.sbatch"
+    write_sbatch(sbatch_path, content)
+    return sbatch_path
 
 
-def main() -> int:
+# -----------------------------------------------------------------------------
+# Step 4: Job submission (execution)
+# -----------------------------------------------------------------------------
+
+
+def _submit_job(sbatch_path: Path, project_root: Path) -> int:
+    """
+    Submit the sbatch job to the cluster.
+
+    Runs `sbatch <sbatch_path>` from the project root so SLURM_SUBMIT_DIR
+    is set correctly when the job starts.
+
+    :param sbatch_path: Path to the .sbatch file.
+    :param project_root: Directory to run sbatch from.
+    :return: Exit code from sbatch (0 on success).
+    """
+    result = subprocess.run(
+        ["sbatch", str(sbatch_path)],
+        cwd=str(project_root),
+    )
+    return result.returncode
+
+
+# -----------------------------------------------------------------------------
+# Main orchestration
+# -----------------------------------------------------------------------------
+
+
+def _parse_args() -> argparse.Namespace:
+    """Parse and return command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Generate sbatch job for running main.py on a single project"
     )
@@ -99,114 +234,60 @@ def main() -> int:
     )
     parser.add_argument(
         "--class-path",
-        help="Path to the Java class file. If omitted, discovers first focal class.",
+        required=True,
+        help="Path to the Java class file under benchmarks/ (e.g. benchmarks/gson/gson/src/main/java/.../X.java). "
+        "Required because benchmarks are zipped before execution; discovery is not possible.",
     )
+    parser.add_argument("--config", default="config/config.json", help="Path to config JSON")
+    parser.add_argument("--output-dir", type=Path, default=_SCRIPT_DIR / "jobs", help="Directory for generated sbatch and config files")
     parser.add_argument(
-        "--config",
-        default="config/config.json",
-        help="Base config file path (default: config/config.json)",
-    )
+        "--work-dir", help="Working directory on cluster (default: ${SLURM_SUBMIT_DIR})")
+    parser.add_argument("--conda-env", default="evogpt", help="Conda environment name")
     parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=_SCRIPT_DIR / "jobs",
-        help="Directory for generated sbatch and config files",
-    )
+        "--submit", action="store_true", help="Submit the job with sbatch after generating")
+    parser.add_argument("--cpus", type=int, default=4, help="CPUs per task")
     parser.add_argument(
-        "--work-dir",
-        help="Working directory on cluster (default: project root)",
-    )
-    parser.add_argument(
-        "--conda-env",
-        default="evogpt",
-        help="Conda environment name",
-    )
-    parser.add_argument(
-        "--submit",
-        action="store_true",
-        help="Submit the job with sbatch after generating",
-    )
-    parser.add_argument(
-        "--cpus",
-        type=int,
-        default=4,
-        help="CPUs per task",
-    )
-    parser.add_argument(
-        "--mem",
-        default="16G",
-        help="Memory allocation",
-    )
-    args = parser.parse_args()
+        "--mem", default="16G", help="Memory allocation")
+    return parser.parse_args()
 
+
+def main() -> int:
+    """
+    Main entry point: generate sbatch + config, optionally submit.
+
+    Flow:
+      1. Resolve class path
+      2. Create JSON config
+      3. Create sbatch file
+      4. Optionally submit
+    """
+    args = _parse_args()
     project_root = get_project_root()
     base_config = project_root / args.config
+
     if not base_config.exists():
         print(f"ERROR: Base config not found: {base_config}")
         return 1
 
-    class_path = args.class_path
-    if not class_path:
-        os.chdir(project_root)
-        class_path = _discover_first_focal_class(args.project)
-        if not class_path:
-            print(
-                f"ERROR: No focal class found for project '{args.project}'. "
-                "Provide --class-path explicitly."
-            )
-            return 1
-        # Use path relative to project root for portability (forward slashes for Linux)
-        try:
-            class_path = Path(class_path).relative_to(project_root).as_posix()
-        except ValueError:
-            class_path = str(class_path)
-    else:
-        # Normalize to forward slashes for cluster (Linux)
-        p = Path(class_path)
-        if p.is_absolute():
-            try:
-                class_path = p.relative_to(project_root).as_posix()
-            except ValueError:
-                class_path = p.as_posix()
-        else:
-            class_path = Path(class_path).as_posix()
-
+    # Step 1: Validate and normalize class path
+    class_path = _validate_and_normalize_class_path(args.class_path, project_root)
     output_dir = args.output_dir.resolve()
-    configs_dir = output_dir / "configs"
-    config_path = configs_dir / f"config_{args.project}.json"
-    _create_project_config(base_config, config_path, args.project, class_path)
+    config_path = output_dir / "configs" / f"config_{args.project}.json"
 
-    try:
-        config_rel = config_path.resolve().relative_to(project_root.resolve()).as_posix()
-    except ValueError:
-        config_rel = Path(config_path).as_posix()
+    # Step 2: Create JSON config
+    _create_project_config_json(base_config, config_path, args.project, class_path)
 
-    template = load_template()
-    job_name = f"evogpt-{args.project}"
-    content = substitute_template(
-        template,
-        job_name=job_name,
-        script="main.py",
-        arguments=f"--config {config_rel}",
-        work_dir=args.work_dir or "${SLURM_SUBMIT_DIR}",
-        cpus_per_task=args.cpus,
-        mem=args.mem,
-        conda_env=args.conda_env,
-        cluster_temp_logs_path=f"/tmp/evogpt_{args.project}_${{SLURM_JOB_ID}}",
-        logs_dir=_logs_dir_for_output(output_dir, args.project, project_root),
-    )
-
-    sbatch_path = output_dir / f"run_{args.project}.sbatch"
-    write_sbatch(sbatch_path, content)
+    # Step 3: Create sbatch file
+    sbatch_path = _create_sbatch_file(args.project, config_path, output_dir, project_root, work_dir=args.work_dir, 
+    conda_env=args.conda_env, cpus=args.cpus, mem=args.mem)
 
     print(f"Generated: {sbatch_path}")
     print(f"Config: {config_path}")
     print(f"Project: {args.project}, Class: {Path(class_path).name}")
 
+    # Step 4: Optionally submit
     if args.submit:
-        import subprocess
-        result = subprocess.run(["sbatch", str(sbatch_path)], cwd=str(project_root))
-        return result.returncode
+        return _submit_job(sbatch_path, project_root)
 
     return 0
 
