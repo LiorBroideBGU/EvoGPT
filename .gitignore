@@ -24,4 +24,3 @@ config/*.pyo
 config/*.pyd
 /benchmarks/gson/*
 /results/unit_tests/*
-config/*
