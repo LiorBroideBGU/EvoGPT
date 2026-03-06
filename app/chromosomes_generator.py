@@ -1,4 +1,4 @@
-from config.config import *
+from config.config_loader import get_config
 from llm_agents.unit_test_generator import UnitTestGenerator
 from llm_agents.coverage_enhancement_agent import CoverageEnhancementAgent
 from llm_agents.plateau_escape_agent import PlateauEscapeAgent
@@ -35,7 +35,8 @@ class ChromosomesGenerator:
             try:
                 self.logger.debug(f"Thread-{thread_number} starting (attempt {attempt}/{max_retries}) with temperature={temperature}")
 
-                unit_test_generator = UnitTestGenerator(api_key=API_KEY, model=MODEL, temperature=temperature)
+                cfg = get_config()
+                unit_test_generator = UnitTestGenerator(api_key=cfg.API_KEY, model=cfg.MODEL, temperature=temperature)
                 project_id = self.project_name
 
                 # Generation + Repair loop (initial)
@@ -72,8 +73,8 @@ class ChromosomesGenerator:
 
                     # Enhancements
                     test_enhancements = CoverageEnhancementAgent(
-                        api_key=API_KEY,
-                        model=MODEL,
+                        api_key=cfg.API_KEY,
+                        model=cfg.MODEL,
                         temperature=temperature,
                         java_file_path=self.source_code_path
                     )
@@ -165,7 +166,8 @@ class ChromosomesGenerator:
             best_chromosome: The chromosome with the highest fitness score
         """
         # Initialize the PlateauEscapeAgent
-        escape_agent = PlateauEscapeAgent(api_key=API_KEY, model=MODEL)
+        cfg = get_config()
+        escape_agent = PlateauEscapeAgent(api_key=cfg.API_KEY, model=cfg.MODEL)
         
         # Get coverage gaps from the best chromosome
         # We need to regenerate coverage report to get missed branches
@@ -269,8 +271,9 @@ class ChromosomesGenerator:
             self.logger.debug(f"Starting Evolution: {max_generations} offspring pairs to generate")
         self.logger.debug(f"Initial population size: {len(self.chromosomes)}")
         self.logger.debug(f"Best initial fitness: {best_initial.fitness_score:.3f}")
-        if LLM_INJECTION_ENABLED:
-            self.logger.debug(f"LLM Injection: ENABLED (threshold={STAGNATION_THRESHOLD}, max={MAX_INJECTIONS}, agents=5)")
+        cfg = get_config()
+        if cfg.LLM_INJECTION_ENABLED:
+            self.logger.debug(f"LLM Injection: ENABLED (threshold={cfg.STAGNATION_THRESHOLD}, max={cfg.MAX_INJECTIONS}, agents=5)")
         else:
             self.logger.debug(f"LLM Injection: DISABLED")
         self.logger.debug(f"{'='*60}\n")
@@ -301,34 +304,34 @@ class ChromosomesGenerator:
                 offspring2 = self.create_chromosome(base_path / "offspring2" / "javafiles")
 
                 # Select mutation strategy based on configuration
-                if MUTATION_STRATEGY == 'llm':
+                if cfg.MUTATION_STRATEGY == 'llm':
                     off_1_mag = MutationAssertionGenerator(
-                        api_key=API_KEY,
-                        model=MODEL,
-                        temperature=TEMPERATURE,
+                        api_key=cfg.API_KEY,
+                        model=cfg.MODEL,
+                        temperature=cfg.TEMPERATURE,
                         unit_test_path=base_path / "offspring1" / "javafiles" / f"{self.class_name}Test.java",
                         source_code_path=base_path / "offspring1" / "javafiles" / f"{self.class_name}.java"
                     )
                     off_2_mag = MutationAssertionGenerator(
-                        api_key=API_KEY,
-                        model=MODEL,
-                        temperature=TEMPERATURE,
+                        api_key=cfg.API_KEY,
+                        model=cfg.MODEL,
+                        temperature=cfg.TEMPERATURE,
                         unit_test_path=base_path / "offspring2" / "javafiles" / f"{self.class_name}Test.java",
                         source_code_path=base_path / "offspring2" / "javafiles" / f"{self.class_name}.java"
                     )
-                elif MUTATION_STRATEGY == 'programmatic':
+                elif cfg.MUTATION_STRATEGY == 'programmatic':
                     off_1_mag = ProgrammaticMutator(
                         unit_test_path=base_path/ "offspring1" / "javafiles" / f"{self.class_name}Test.java",
                         source_code_path=base_path/ "offspring1" / "javafiles" / f"{self.class_name}.java",
-                        mutation_probability=PROGRAMMATIC_MUTATION_PROBABILITY
+                        mutation_probability=cfg.PROGRAMMATIC_MUTATION_PROBABILITY
                     )
                     off_2_mag = ProgrammaticMutator(
                         unit_test_path=base_path/ "offspring2" / "javafiles" / f"{self.class_name}Test.java",
                         source_code_path=base_path/ "offspring2" / "javafiles" / f"{self.class_name}.java",
-                        mutation_probability=PROGRAMMATIC_MUTATION_PROBABILITY
+                        mutation_probability=cfg.PROGRAMMATIC_MUTATION_PROBABILITY
                     )
                 else:
-                    raise ValueError(f"Unknown MUTATION_STRATEGY: '{MUTATION_STRATEGY}'. Expected 'llm' or 'programmatic'.")
+                    raise ValueError(f"Unknown MUTATION_STRATEGY: '{cfg.MUTATION_STRATEGY}'. Expected 'llm' or 'programmatic'.")
                 
                 # Apply mutations (both mutators use the same interface)
                 await asyncio.gather(off_2_mag.assertion_generation(), off_1_mag.assertion_generation())
@@ -363,7 +366,7 @@ class ChromosomesGenerator:
                 current_best = max(self.chromosomes, key=lambda c: c.fitness_score)
                 fitness_improvement = current_best.fitness_score - last_best_fitness
                 
-                if fitness_improvement >= MIN_FITNESS_IMPROVEMENT:
+                if fitness_improvement >= cfg.MIN_FITNESS_IMPROVEMENT:
                     # Progress made - reset stagnation counter
                     stagnation_counter = 0
                     last_best_fitness = current_best.fitness_score
@@ -372,13 +375,13 @@ class ChromosomesGenerator:
                     stagnation_counter += 1
                 
                 # Check if we should trigger LLM injection
-                if (LLM_INJECTION_ENABLED and 
-                    stagnation_counter >= STAGNATION_THRESHOLD and 
-                    injection_count < MAX_INJECTIONS):
+                if (cfg.LLM_INJECTION_ENABLED and
+                    stagnation_counter >= cfg.STAGNATION_THRESHOLD and
+                    injection_count < cfg.MAX_INJECTIONS):
                     
                     self.logger.debug(f"\n{'='*60}")
                     self.logger.debug(f"STAGNATION DETECTED after {stagnation_counter} iterations without improvement!")
-                    self.logger.debug(f"Triggering CodaMosa-style LLM injection #{injection_count + 1}/{MAX_INJECTIONS}...")
+                    self.logger.debug(f"Triggering CodaMosa-style LLM injection #{injection_count + 1}/{cfg.MAX_INJECTIONS}...")
                     self.logger.debug(f"{'='*60}")
                     
                     try:
@@ -397,7 +400,7 @@ class ChromosomesGenerator:
                 if offspring_pairs_generated % 5 == 0:
                     best_current = max(self.chromosomes, key=lambda c: c.fitness_score)
                     avg_fitness = sum(c.fitness_score for c in self.chromosomes) / len(self.chromosomes)
-                    stagnation_info = f", stagnation={stagnation_counter}" if LLM_INJECTION_ENABLED else ""
+                    stagnation_info = f", stagnation={stagnation_counter}" if cfg.LLM_INJECTION_ENABLED else ""
                     self.logger.debug(f"Offspring pairs: {offspring_pairs_generated}/{max_generations} - Best: {best_current.fitness_score:.3f}, Avg: {avg_fitness:.3f}, Pop size: {len(self.chromosomes)}{stagnation_info}")
                 
             except Exception as e:
@@ -487,8 +490,8 @@ class ChromosomesGenerator:
         # Delete the entire results directory for this project and class
         project_results_dir = os.path.join("results", "unit_tests", self.project_name, self.class_name)
         if os.path.exists(project_results_dir):
-            from config.config import PRESERVE_INITIAL_POOL
-            if not PRESERVE_INITIAL_POOL:
+            cfg = get_config()
+            if not cfg.PRESERVE_INITIAL_POOL:
                 shutil.rmtree(project_results_dir)
                 self.logger.debug(f"Cleaned up temporary files from: {project_results_dir}")
             else:

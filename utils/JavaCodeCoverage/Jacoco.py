@@ -2,7 +2,7 @@ import subprocess
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from config.config import JAVA_BIN, JAVAC_BIN
+from config.config_loader import get_config
 from utils.dataset_utils import *
 import logging
 
@@ -50,11 +50,12 @@ class JavaCodeCoverage:
         :param output_dir: Directory where the compiled .class files will be saved.
         :return: bool indicating success or failure of the compilation process.
         """
+        cfg = get_config()
         output_dir = Path(output_dir)
         try:
             subprocess.run(
                 [
-                    JAVAC_BIN,
+                    cfg.JAVAC_BIN,
                     "-cp", self.classpath_combined,  # Include all jars in the classpath
                     "-d", str(output_dir),  # Output directory for .class files
                     str(self.java_files_dir / f"{self.test_class}Test.java"),  # Test class
@@ -81,10 +82,11 @@ class JavaCodeCoverage:
         jacoco_agent = self.classpath / "jacocoagent.jar"
         coverage_file = output_dir / "coverage.exec"
 
+        cfg = get_config()
         try:
             result = subprocess.run(
                 [
-                    JAVA_BIN,
+                    cfg.JAVA_BIN,
                     "-javaagent:" + str(jacoco_agent) + f"=destfile={coverage_file}",  # JaCoCo agent argument
                     "-cp", f"{str(output_dir)}{os.pathsep}{self.classpath_combined}",
                     "org.junit.runner.JUnitCore",  # Run the JUnit tests
@@ -107,11 +109,12 @@ class JavaCodeCoverage:
 
         :param output_dir: Directory to save the .exec coverage data.
         """
+        cfg = get_config()
         output_dir = Path(output_dir)
         try:
             subprocess.run(
                 [
-                    JAVA_BIN,
+                    cfg.JAVA_BIN,
                     "-jar",
                     str(Path("lib", "jars", "jacococli.jar").resolve()),
                     "report",

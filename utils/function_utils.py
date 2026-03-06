@@ -256,8 +256,8 @@ def extract_project_name(path: Path, root_hint: str | Path | None = None) -> Pat
     """
     if root_hint is None:
         try:
-            import config.config as _cfg
-            root_hint = getattr(_cfg, "PROJECT_ROOT", "benchmarks")
+            from config.config_loader import get_config
+            root_hint = get_config().PROJECT_ROOT
         except Exception:
             root_hint = "benchmarks"
 

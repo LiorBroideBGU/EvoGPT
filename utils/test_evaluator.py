@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 import subprocess
-from config.config import JAVA_BIN, JAVAC_BIN
+from config.config_loader import get_config
 from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.MutationScoreGenerator.PITest import PITestRunner
 from app.chromosome import extract_package_from_path
@@ -196,9 +196,10 @@ class TestEvaluator:
         return java_files
 
     def _compile(self, java_files, cp, classfiles_dir):
+        cfg = get_config()
         try:
             subprocess.run(
-                [JAVAC_BIN, "-cp", cp, "-d", classfiles_dir] + java_files,
+                [cfg.JAVAC_BIN, "-cp", cp, "-d", classfiles_dir] + java_files,
                 check=True, capture_output=True, text=True
             )
             return True
@@ -208,10 +209,11 @@ class TestEvaluator:
 
     def _discover_failing_tests(self, classfiles_dir, cp, test_fqn):
         """Run tests once without JaCoCo to find which methods fail."""
+        cfg = get_config()
         try:
             result = subprocess.run(
                 [
-                    JAVA_BIN,
+                    cfg.JAVA_BIN,
                     "-cp", f"{classfiles_dir}{os.pathsep}{cp}",
                     "org.junit.runner.JUnitCore", test_fqn,
                 ],
@@ -248,10 +250,11 @@ class TestEvaluator:
         coverage_exec = os.path.join(classfiles_dir, "coverage.exec")
         coverage_xml = os.path.join(classfiles_dir, "coverage.xml")
 
+        cfg = get_config()
         try:
             result = subprocess.run(
                 [
-                    JAVA_BIN,
+                    cfg.JAVA_BIN,
                     f"-javaagent:{jacoco_agent}=destfile={coverage_exec}",
                     "-cp", f"{classfiles_dir}{os.pathsep}{cp}",
                     "org.junit.runner.JUnitCore", test_fqn,
@@ -271,7 +274,7 @@ class TestEvaluator:
         try:
             subprocess.run(
                 [
-                    JAVA_BIN, "-jar", jacoco_cli,
+                    cfg.JAVA_BIN, "-jar", jacoco_cli,
                     "report", coverage_exec,
                     "--classfiles", classfiles_dir,
                     "--sourcefiles", javafiles_root,

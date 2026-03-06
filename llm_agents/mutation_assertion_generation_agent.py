@@ -5,7 +5,6 @@ from langchain_core.messages import SystemMessage
 from utils.function_utils import *
 from utils.java_executor import *
 import random
-from config.config import *
 from pathlib import Path
 from prompts.mutatation_assertion_generator_prompts import *
 

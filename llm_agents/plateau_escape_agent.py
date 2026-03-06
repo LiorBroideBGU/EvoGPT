@@ -12,7 +12,7 @@ from typing import List, Tuple, Dict, Optional
 from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from config.config import API_KEY, MODEL
+from config.config_loader import get_config
 from utils.function_utils import (
     extract_test_context,
     parse_generated_test_methods,
@@ -80,8 +80,9 @@ class PlateauEscapeAgent:
             model: LLM model name (defaults to config.MODEL)
         """
         self.logger = logging.getLogger(__name__)
-        self.api_key = api_key or API_KEY
-        self.model = model or MODEL
+        cfg = get_config()
+        self.api_key = api_key or cfg.API_KEY
+        self.model = model or cfg.MODEL
         
     def _get_combined_system_prompt(self, strategy_name: str) -> str:
         """

@@ -3,7 +3,7 @@ import subprocess
 import shutil
 import urllib.request
 from pathlib import Path
-from config.config import JAVA_BIN, JAVAC_BIN
+from config.config_loader import get_config
 
 EVOSUITE_VERSION = "1.2.0"
 EVOSUITE_JAR_URL = f"https://github.com/EvoSuite/evosuite/releases/download/v{EVOSUITE_VERSION}/evosuite-{EVOSUITE_VERSION}.jar"
@@ -89,15 +89,16 @@ class EvoSuiteRunner:
         for root, dirs, files in os.walk(src_root):
             for f in files:
                 if f.endswith('.java'):
-            java_files.append(os.path.join(root, f))
+                    java_files.append(os.path.join(root, f))
 
         if not java_files:
             print(f"[EvoSuite] No .java files found under {src_root}")
             return None
 
+        cfg = get_config()
         try:
             subprocess.run(
-                [JAVAC_BIN, "-source", "11", "-target", "11",
+                [cfg.JAVAC_BIN, "-source", "11", "-target", "11",
                  "-cp", os.pathsep.join(dep_jars),
                  "-d", str(classfiles_dir)] + java_files,
                 check=True, capture_output=True, text=True,
@@ -133,8 +134,9 @@ class EvoSuiteRunner:
         project_cp = os.path.abspath(compiled_dir)
         test_dir = (working_dir / "evosuite-tests").resolve()
 
+        cfg = get_config()
         cmd = [
-            JAVA_BIN, "-jar", str(self.evosuite_jar.resolve()),
+            cfg.JAVA_BIN, "-jar", str(self.evosuite_jar.resolve()),
             "-class", self.fqn,
             "-projectCP", project_cp,
             f"-Dtest_dir={test_dir}",

@@ -1,7 +1,7 @@
 import os
 import subprocess
 from pathlib import Path
-from config.config import JAVA_BIN, JAVAC_BIN
+from config.config_loader import get_config
 import re
 import logging
 
@@ -43,10 +43,11 @@ class PITestRunner:
         # Skip if PITest jar is not available
         if not self.pitest_available:
             return 0.0, 0.0
-            
+
+        cfg = get_config()
         try:
             cmd = [
-                JAVA_BIN,
+                cfg.JAVA_BIN,
                 "-cp", self.classpath,
                 "org.pitest.mutationtest.commandline.MutationCoverageReport",
                 "--targetClasses", self.class_name,

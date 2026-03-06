@@ -66,6 +66,7 @@ The main configuration file is located at `config/config.py`:
 | `TEMPERATURE` | `0.5` | Base temperature for generation |
 | `CLASS_PATH` | - | Path to Java source file under test |
 | `PROJECT` | - | Project/benchmark name |
+| `PROJECT_ROOT` | `'benchmarks'` | Root path for project resolution; overridden by `main.py` when using `--output-dir` |
 | `JAVA_BIN` / `JAVAC_BIN` | - | Paths to Java executables |
 
 ### Evolutionary Parameters
@@ -114,6 +115,43 @@ This will:
 5. Evolve the population through crossover and mutation operations
 6. Output the best test suite to `results/unit_tests/{project}/{class}/`
 
+### Local vs Remote Benchmark Mode
+
+You can run EvoGPT in two ways: using a **local** benchmark from the `benchmarks/` folder, or cloning a **remote** repository from a Git URL. This allows you to work with projects in a dedicated output directory without modifying the original benchmarks.
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--mode` | When using new flow | `local` or `remote` |
+| `--url` | When `mode=remote` | Git clone URL (e.g. `https://github.com/google/gson.git`) |
+| `--output-dir` | When `mode` is set | Directory for extracted/cloned project |
+| `--class-path` | No | Override path to the Java file under test (useful when repo structure differs) |
+
+**Local mode** — Extract a benchmark from `benchmarks/` to the output directory:
+```bash
+python main.py --mode local --output-dir ./workspace
+```
+- Uses the project specified by `PROJECT` in `config/config.py` (e.g. `gson`)
+- Unzips `benchmarks/{PROJECT}.zip` into `./workspace`
+- Resolves the class path from config and runs the evolutionary pipeline
+
+**Remote mode** — Clone a repository from a Git URL:
+```bash
+python main.py --mode remote --url https://github.com/google/gson.git --output-dir ./workspace
+```
+- Clones the repository into `./workspace`
+- Derives the project name from the URL
+- Uses the same internal structure as the config's `CLASS_PATH` to locate the Java file
+
+**Override class path** (when the repository structure differs from the benchmark):
+```bash
+python main.py --mode remote --url https://github.com/google/gson.git --output-dir ./workspace --class-path ./workspace/gson/src/main/java/com/google/gson/JsonArray.java
+```
+
+**Backward compatibility** — With no arguments, EvoGPT uses `CLASS_PATH` and `PROJECT` from config as before:
+```bash
+python main.py
+```
+
 ### Working with Benchmarks
 
 The project includes Java benchmarks in the `benchmarks/` directory (as zip files):
@@ -128,11 +166,20 @@ The project includes Java benchmarks in the `benchmarks/` directory (as zip file
 **Other Libraries:**
 - `jfreechart`, `joda-time`, `jsoup`, `mockito`, `closure-compiler`
 
-To use a benchmark:
+**Option 1 — Config-based (traditional):**
 1. Extract the desired benchmark zip file
 2. Update `CLASS_PATH` in `config/config.py` to point to a Java source file
 3. Update `PROJECT` to match the benchmark name
 4. Run `python main.py`
+
+**Option 2 — Local mode (extract to output dir):**
+1. Ensure `benchmarks/{PROJECT}.zip` exists
+2. Run `python main.py --mode local --output-dir ./workspace`
+3. The benchmark is extracted to `./workspace` and the pipeline runs automatically
+
+**Option 3 — Remote mode (clone from Git):**
+1. Run `python main.py --mode remote --url <git-url> --output-dir ./workspace`
+2. Use `--class-path` if the repository structure differs from the benchmark layout
 
 ## 📁 Project Structure
 
@@ -158,6 +205,7 @@ EvoGPT/
 │   ├── mutation_assertion_generator/
 │   └── plateau_escape/
 ├── utils/
+│   ├── benchmark_utils.py            # Benchmark extraction and source root discovery
 │   ├── java_executor.py              # Java compilation and execution
 │   ├── function_utils.py             # General utilities
 │   ├── dataset_utils.py              # Dataset processing

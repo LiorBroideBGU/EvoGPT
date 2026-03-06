@@ -4,7 +4,7 @@ from utils.MutationScoreGenerator.PITest import PITestRunner
 from utils.function_utils import *
 import random
 import uuid
-from config.config import PROJECT, CLASS_PATH
+from config.config_loader import get_config
 from pathlib import Path
 
 def extract_package_from_path(java_file_path):
@@ -91,17 +91,18 @@ class Chromosome:
         Based on line coverage, branch coverage and mutation score.
         """
         self._fix_runtime_errors()
-        
+
+        cfg = get_config()
         # Extract package name dynamically from CLASS_PATH
-        package_name = extract_package_from_path(CLASS_PATH)
+        package_name = extract_package_from_path(cfg.CLASS_PATH)
         fully_qualified_class = f"{package_name}.{self.java_file_name}"
-        
+
         java_files_dir = self.path
-        jcc = JavaCodeCoverage(java_files_dir, self.java_file_name, PROJECT, self.thread_id)
+        jcc = JavaCodeCoverage(java_files_dir, self.java_file_name, cfg.PROJECT, self.thread_id)
 
         parent_dir = self.path.parent
         mutation_scorer = PITestRunner(
-            project_name=PROJECT,
+            project_name=cfg.PROJECT,
             class_name=fully_qualified_class,  # fully qualified class name (e.g. org.apache.commons.cli.Option)
             classfiles_dir=parent_dir / "classfiles",
             source_dir=java_files_dir,

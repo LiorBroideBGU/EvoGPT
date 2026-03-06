@@ -1,7 +1,7 @@
 import os
 import subprocess
 import javalang
-from config.config import JAVA_BIN, JAVAC_BIN
+from config.config_loader import get_config
 from pathlib import Path
 
 
@@ -35,6 +35,7 @@ class JavaExecutor:
         :return: Boolean whether compilation was successful
         :return: Stack-trace from the compiler process.
         """
+        cfg = get_config()
         try:
             source_code_name = self.java_file_name.replace("Test", "")
             # .../<ClassName>/<thread>/javafiles -> build under sibling classfiles
@@ -43,7 +44,7 @@ class JavaExecutor:
             output_dir.mkdir(parents=True, exist_ok=True)
             result = subprocess.run(
                 [
-                    JAVAC_BIN,  # Explicitly use Java 8's `javac`
+                    cfg.JAVAC_BIN,  # Explicitly use Java 8's `javac`
                     # "-source", "1.8",
                     # "-target", "1.8",
                     "-cp", self.classpath,
@@ -68,6 +69,7 @@ class JavaExecutor:
         :param classpath: Path to the directory containing JAR dependencies.
         :return: (success, output) tuple
         """
+        cfg = get_config()
         try:
 
             # Compile the Java file
@@ -77,7 +79,7 @@ class JavaExecutor:
             output_dir.mkdir(parents=True, exist_ok=True)
             compile_result = subprocess.run(
                 [
-                    JAVAC_BIN,
+                    cfg.JAVAC_BIN,
                     "-cp", self.classpath,
                     "-d", str(output_dir),
                     str(self.java_file_path),
@@ -92,7 +94,7 @@ class JavaExecutor:
             # Run the compiled tests
             result = subprocess.run(
                 [
-                    JAVA_BIN,
+                    cfg.JAVA_BIN,
                     "-cp", f"{str(output_dir)}{os.pathsep}{self.classpath}",
                     "org.junit.runner.JUnitCore",
                     self.java_file_name
