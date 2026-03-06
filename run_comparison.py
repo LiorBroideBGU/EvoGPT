@@ -31,6 +31,7 @@ from utils.dataset_utils import is_focal_class
 from utils.function_utils import read_java_file_as_string
 from utils.benchmark_utils import ensure_extracted, find_source_root
 from app.chromosomes_generator import ChromosomesGenerator
+from logging.handlers import RotatingFileHandler
 
 
 # -----------------------------------------------------------------------------
@@ -39,7 +40,8 @@ from app.chromosomes_generator import ChromosomesGenerator
 
 def _setup_logging() -> logging.Logger:
     """Configure logging and return the main logger."""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
+    handlers=[RotatingFileHandler(f"{os.getenv('LOGGING_DIRECTORY', 'logs')}/comparison.log", maxBytes=10*1024*1024)])
     return logging.getLogger(__name__)
 
 

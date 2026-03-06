@@ -17,7 +17,7 @@ from pathlib import Path
 
 from config.config_loader import load
 from utils.benchmark_utils import ensure_extracted
-
+from logging.handlers import RotatingFileHandler
 
 def _setup_logging() -> logging.Logger:
     """Configure logging and return the main logger."""
@@ -25,7 +25,7 @@ def _setup_logging() -> logging.Logger:
         level=logging.DEBUG,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
-            logging.RotatingFileHandler(f"{os.getenv('LOGGING_DIRECTORY', 'logs')}/evogpt.log", maxBytes=10*1024*1024, backupCount=5),
+            RotatingFileHandler(f"{os.getenv('LOGGING_DIRECTORY', 'logs')}/evogpt.log", maxBytes=10*1024*1024),
         ],
     )
     logging.getLogger("httpcore").setLevel(logging.CRITICAL)
