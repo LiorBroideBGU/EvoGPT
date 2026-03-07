@@ -28,74 +28,79 @@
 ### Setup
 
 1. **Clone the repository**:
-   ```bash
+  ```bash
    git clone <repository-url>
    cd EvoGPT
-   ```
-
+  ```
 2. **Create and activate virtual environment**:
-   ```bash
+  ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
+  ```
 3. **Install Python dependencies**:
-   ```bash
+  ```bash
    pip install -r requirements.txt
-   ```
-
+  ```
 4. **Configure the system**:
-   Edit `config/config.py` with your settings:
-   ```python
-   API_KEY = 'your-openai-api-key'
-   JAVAC_BIN = '/path/to/javac'
-   JAVA_BIN = '/path/to/java'
-   CLASS_PATH = '/path/to/your/java/source/File.java'
-   PROJECT = 'project-name'
-   ```
+  Edit `config/config.py` with your settings:
 
 ## 📋 Configuration
 
 The main configuration file is located at `config/config.py`:
 
 ### Core Settings
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `API_KEY` | - | OpenAI API key |
-| `MODEL` | `'gpt-4o-mini'` | LLM model to use |
-| `TEMPERATURE` | `0.5` | Base temperature for generation |
-| `CLASS_PATH` | - | Path to Java source file under test |
-| `PROJECT` | - | Project/benchmark name |
-| `PROJECT_ROOT` | `'benchmarks'` | Root path for project resolution; overridden by `main.py` when using `--output-dir` |
-| `JAVA_BIN` / `JAVAC_BIN` | - | Paths to Java executables |
+
+
+| Parameter                | Default         | Description                                                                         |
+| ------------------------ | --------------- | ----------------------------------------------------------------------------------- |
+| `API_KEY`                | -               | OpenAI API key                                                                      |
+| `MODEL`                  | `'gpt-4o-mini'` | LLM model to use                                                                    |
+| `TEMPERATURE`            | `0.5`           | Base temperature for generation                                                     |
+| `CLASS_PATH`             | -               | Path to Java source file under test                                                 |
+| `PROJECT`                | -               | Project/benchmark name                                                              |
+| `PROJECT_ROOT`           | `'benchmarks'`  | Root path for project resolution; overridden by `main.py` when using `--output-dir` |
+| `JAVA_BIN` / `JAVAC_BIN` | -               | Paths to Java executables                                                           |
+
 
 ### Evolutionary Parameters
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `EVO_GENERATIONS` | `25` | Number of offspring pairs to generate |
-| `EVO_POPULATION` | `25` | Initial population size |
+
+
+| Parameter         | Default | Description                           |
+| ----------------- | ------- | ------------------------------------- |
+| `EVO_GENERATIONS` | `25`    | Number of offspring pairs to generate |
+| `EVO_POPULATION`  | `25`    | Initial population size               |
+
 
 ### Mutation Strategy
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `MUTATION_STRATEGY` | `'programmatic'` | `'llm'` or `'programmatic'` |
-| `PROGRAMMATIC_MUTATION_PROBABILITY` | `0.3` | Probability of mutating each test method |
+
+
+| Parameter                           | Default          | Description                              |
+| ----------------------------------- | ---------------- | ---------------------------------------- |
+| `MUTATION_STRATEGY`                 | `'programmatic'` | `'llm'` or `'programmatic'`              |
+| `PROGRAMMATIC_MUTATION_PROBABILITY` | `0.3`            | Probability of mutating each test method |
+
 
 ### Performance Optimizations
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `PARALLEL_FITNESS_EVALUATION` | `True` | Compute offspring fitness in parallel |
-| `PITEST_THREADS` | `2` | Number of threads for PITest |
-| `PITEST_TIMEOUT` | `60` | Timeout for PITest (seconds) |
+
+
+| Parameter                     | Default | Description                           |
+| ----------------------------- | ------- | ------------------------------------- |
+| `PARALLEL_FITNESS_EVALUATION` | `True`  | Compute offspring fitness in parallel |
+| `PITEST_THREADS`              | `2`     | Number of threads for PITest          |
+| `PITEST_TIMEOUT`              | `60`    | Timeout for PITest (seconds)          |
+
 
 ### CodaMosa-Style LLM Injection
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `LLM_INJECTION_ENABLED` | `True` | Enable plateau escape mechanism |
-| `STAGNATION_THRESHOLD` | `5` | Iterations without improvement before injection |
-| `MIN_FITNESS_IMPROVEMENT` | `0.5` | Minimum fitness delta to reset stagnation |
-| `INJECTION_AGENTS_COUNT` | `3` | Parallel agents per injection |
-| `MAX_INJECTIONS` | `3` | Maximum injection attempts per run |
+
+
+| Parameter                 | Default | Description                                     |
+| ------------------------- | ------- | ----------------------------------------------- |
+| `LLM_INJECTION_ENABLED`   | `True`  | Enable plateau escape mechanism                 |
+| `STAGNATION_THRESHOLD`    | `5`     | Iterations without improvement before injection |
+| `MIN_FITNESS_IMPROVEMENT` | `0.5`   | Minimum fitness delta to reset stagnation       |
+| `INJECTION_AGENTS_COUNT`  | `3`     | Parallel agents per injection                   |
+| `MAX_INJECTIONS`          | `3`     | Maximum injection attempts per run              |
+
 
 ## 🎯 Usage
 
@@ -108,6 +113,7 @@ python main.py
 ```
 
 This will:
+
 1. Generate an initial population of test suites using diverse LLM agents (5 temperature/personality combinations)
 2. Apply generation-repair loops to fix syntax and compilation errors
 3. Enhance tests with coverage-guided assertions
@@ -119,35 +125,43 @@ This will:
 
 You can run EvoGPT in two ways: using a **local** benchmark from the `benchmarks/` folder, or cloning a **remote** repository from a Git URL. This allows you to work with projects in a dedicated output directory without modifying the original benchmarks.
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `--mode` | When using new flow | `local` or `remote` |
-| `--url` | When `mode=remote` | Git clone URL (e.g. `https://github.com/google/gson.git`) |
-| `--output-dir` | When `mode` is set | Directory for extracted/cloned project |
-| `--class-path` | No | Override path to the Java file under test (useful when repo structure differs) |
+
+| Argument       | Required            | Description                                                                    |
+| -------------- | ------------------- | ------------------------------------------------------------------------------ |
+| `--mode`       | When using new flow | `local` or `remote`                                                            |
+| `--url`        | When `mode=remote`  | Git clone URL (e.g. `https://github.com/google/gson.git`)                      |
+| `--output-dir` | When `mode` is set  | Directory for extracted/cloned project                                         |
+| `--class-path` | No                  | Override path to the Java file under test (useful when repo structure differs) |
+
 
 **Local mode** — Extract a benchmark from `benchmarks/` to the output directory:
+
 ```bash
 python main.py --mode local --output-dir ./workspace
 ```
+
 - Uses the project specified by `PROJECT` in `config/config.py` (e.g. `gson`)
 - Unzips `benchmarks/{PROJECT}.zip` into `./workspace`
 - Resolves the class path from config and runs the evolutionary pipeline
 
 **Remote mode** — Clone a repository from a Git URL:
+
 ```bash
 python main.py --mode remote --url https://github.com/google/gson.git --output-dir ./workspace
 ```
+
 - Clones the repository into `./workspace`
 - Derives the project name from the URL
 - Uses the same internal structure as the config's `CLASS_PATH` to locate the Java file
 
 **Override class path** (when the repository structure differs from the benchmark):
+
 ```bash
 python main.py --mode remote --url https://github.com/google/gson.git --output-dir ./workspace --class-path ./workspace/gson/src/main/java/com/google/gson/JsonArray.java
 ```
 
 **Backward compatibility** — With no arguments, EvoGPT uses `CLASS_PATH` and `PROJECT` from config as before:
+
 ```bash
 python main.py
 ```
@@ -157,27 +171,33 @@ python main.py
 The project includes Java benchmarks in the `benchmarks/` directory (as zip files):
 
 **Apache Commons:**
+
 - `commons-cli`, `commons-csv`, `commons-codec`, `commons-collections`
 - `commons-compress`, `commons-jxpath`, `commons-lang`, `commons-math`
 
 **JSON/Data Processing:**
+
 - `gson`, `jackson-core`, `jackson-databind`, `jackson-dataformat-xml`
 
 **Other Libraries:**
+
 - `jfreechart`, `joda-time`, `jsoup`, `mockito`, `closure-compiler`
 
 **Option 1 — Config-based (traditional):**
+
 1. Extract the desired benchmark zip file
 2. Update `CLASS_PATH` in `config/config.py` to point to a Java source file
 3. Update `PROJECT` to match the benchmark name
 4. Run `python main.py`
 
 **Option 2 — Local mode (extract to output dir):**
+
 1. Ensure `benchmarks/{PROJECT}.zip` exists
 2. Run `python main.py --mode local --output-dir ./workspace`
 3. The benchmark is extracted to `./workspace` and the pipeline runs automatically
 
 **Option 3 — Remote mode (clone from Git):**
+
 1. Run `python main.py --mode remote --url <git-url> --output-dir ./workspace`
 2. Use `--class-path` if the repository structure differs from the benchmark layout
 
@@ -223,22 +243,28 @@ EvoGPT/
 ## 🧬 How It Works
 
 ### 1. Chromosome Representation
+
 Each chromosome represents a complete Java test suite file with:
+
 - Test methods with `@Test` annotations
 - Import statements and class fields
 - Fitness metrics (branch coverage, line coverage, mutation score)
 
 ### 2. Initial Population Generation
+
 - **N chromosomes** generated in parallel using async execution
 - Each uses one of 5 temperature/personality combinations
 - Generation-repair loop fixes compilation errors
 - Coverage enhancement adds assertions for missed branches
 
 ### 3. Fitness Evaluation
+
 Fitness is computed as a weighted combination:
+
 ```
 Fitness = 0.3 × Branch Coverage + 0.2 × Line Coverage + 0.5 × Mutation Score
 ```
+
 This design emphasizes mutation score, the primary indicator of fault detection capability.
 
 ### 4. Evolutionary Operations
@@ -246,6 +272,7 @@ This design emphasizes mutation score, the primary indicator of fault detection 
 **Selection**: Rank-based probabilistic selection favoring higher fitness chromosomes
 
 **Crossover** (EvoSuite-style):
+
 - Extract test methods from two parent chromosomes
 - Split at random crossover point α
 - Child 1: Parent1[0:α] + Parent2[α:end]
@@ -253,13 +280,16 @@ This design emphasizes mutation score, the primary indicator of fault detection 
 - Resolve method name collisions with `_co` suffix
 
 **Mutation** (configurable strategy):
+
 - **Programmatic** (EvoSuite-inspired):
   - Statement deletion (remove non-assertion statements)
   - Primitive modification (change numeric/string literals)
   - Assertion removal (weaken tests to find minimal set)
 
 ### 5. Plateau Escape (Optional)
+
 When evolution stagnates (no fitness improvement for N iterations):
+
 1. All 5 LLM agent personalities generate targeted test methods in parallel
 2. Methods focus on uncovered branches identified by JaCoCo
 3. Generated methods are injected into the best chromosome
@@ -268,12 +298,14 @@ When evolution stagnates (no fitness improvement for N iterations):
 ## 🔧 Dependencies
 
 ### Python Packages
+
 - **langchain** / **langchain-openai**: LLM integration framework
 - **javalang**: Java code parsing and analysis
 - **numpy**: Scientific computing utilities
 - **pytest** / **pytest-asyncio**: Testing framework
 
 ### Java Tools (included in `lib/jars/`)
+
 - **JaCoCo**: Code coverage analysis
 - **PITest**: Mutation testing framework
 - **JUnit 4**: Unit testing framework
@@ -284,13 +316,15 @@ When evolution stagnates (no fitness improvement for N iterations):
 
 The system provides comprehensive metrics for each test suite:
 
-| Metric | Description |
-|--------|-------------|
-| **Line Coverage** | Percentage of source code lines executed |
-| **Branch Coverage** | Percentage of conditional branches taken |
-| **Mutation Score** | Percentage of artificial defects (mutants) detected |
-| **Test Strength** | Overall test quality indicator from PITest |
-| **Fitness Score** | Weighted combination used for evolution |
+
+| Metric              | Description                                         |
+| ------------------- | --------------------------------------------------- |
+| **Line Coverage**   | Percentage of source code lines executed            |
+| **Branch Coverage** | Percentage of conditional branches taken            |
+| **Mutation Score**  | Percentage of artificial defects (mutants) detected |
+| **Test Strength**   | Overall test quality indicator from PITest          |
+| **Fitness Score**   | Weighted combination used for evolution             |
+
 
 ## 🤝 Contributing
 
@@ -310,7 +344,6 @@ EvoGPT combines evolutionary computation with large language models for automate
 
 ### 📄 Publication
 
-TODO
----
+## TODO
 
 **Note**: Ensure your OpenAI API key and Java environment are properly configured before running the system. The API key should have sufficient credits for LLM calls during test generation.

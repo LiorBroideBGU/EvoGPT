@@ -33,6 +33,11 @@ from utils.benchmark_utils import ensure_extracted, find_source_root
 from app.chromosomes_generator import ChromosomesGenerator
 from logging.handlers import RotatingFileHandler
 
+TOOL_NAME_TO_DIR = {
+    "EvoGPT": "evogpt",
+    "EvoSuite": "evosuite",
+    "EvoGPT+EvoSuite": "evogpt_evosuite",
+}
 
 # -----------------------------------------------------------------------------
 # Setup
@@ -66,40 +71,27 @@ def _load_targets_from_batch_config(batch_config_path: str) -> list[dict]:
 
 
 def _discover_focal_classes(
-    project_name: str, benchmarks_dir: str = "benchmarks", limit: int | None = None
+    project_name: str, benchmarks_dir: str = "benchmarks", limit: int | None = None, output_dir: Path = Path("evogpt_extracted")
 ) -> list[str]:
     """
     Walk a benchmark project's source tree and return class paths for every
     focal class. Automatically extracts the project zip if needed.
     """
-    if not ensure_extracted(project_name, benchmarks_dir, target_dir=None):
-        global_logger.info(f"[discover] No folder or zip found for project '{project_name}' under {benchmarks_dir}/")
-        return []
+    project_path = ensure_extracted(project_name, benchmarks_dir, target_dir=output_dir)
+    if project_path is None:
+        global_logger.error(f"[discover] No folder or zip found for project '{project_name}' under {benchmarks_dir}/")
+        sys.exit(1)
 
-    project_path = Path(benchmarks_dir) / project_name
     source_root = find_source_root(project_path, project_name)
-    if source_root is None:
-        global_logger.info(f"[discover] Could not find source root for project '{project_name}' under {benchmarks_dir}/")
-        return []
-
     focal_paths: list[str] = []
-    skipped = 0
-    for root, _dirs, files in os.walk(source_root):
-        for fname in sorted(files):
-            if not fname.endswith(".java"):
-                continue
-            fpath = os.path.join(root, fname)
-            code = read_java_file_as_string(fpath)
-            if code and is_focal_class(code):
-                focal_paths.append(fpath)
-            else:
-                skipped += 1
+    sorted_java_files = sorted(source_root.rglob("*.java"))
+    global_logger.info(f"[discover] Source root: {source_root}")
+    for java_file in sorted_java_files:
+        code = read_java_file_as_string(java_file)
+        if code and is_focal_class(code):
+            focal_paths.append(java_file.as_posix())
 
-    global_logger.info(
-        f"[discover] {project_name}: found {len(focal_paths)} focal classes "
-        f"({skipped} skipped — interfaces / abstract / non-public)"
-    )
-
+    global_logger.info(f"[discover] Found {len(focal_paths)} focal classes ({len(sorted_java_files) - len(focal_paths)} skipped — interfaces / abstract / non-public)")
     if limit is not None and limit < len(focal_paths):
         focal_paths = focal_paths[:limit]
         global_logger.info(f"[discover] Limiting to first {limit} classes")
@@ -107,14 +99,13 @@ def _discover_focal_classes(
     return focal_paths
 
 
-def _resolve_targets(cfg) -> list[dict]:
+
+def _resolve_targets(comp: dict, output_dir: Path) -> list[dict]:
     """
     Resolve the list of (project, class_path) targets from config.
 
     Supports: batch_config, class_path+project, or project+discover.
     """
-    comp = cfg.comparison
-
     if comp.get("batch_config"):
         return _load_targets_from_batch_config(comp["batch_config"])
 
@@ -122,16 +113,10 @@ def _resolve_targets(cfg) -> list[dict]:
         return [{"project": comp["project"], "class_path": comp["class_path"]}]
 
     if comp.get("project"):
-        focal_paths = _discover_focal_classes(comp["project"], limit=comp.get("limit"))
-        if not focal_paths:
-            global_logger.error(f"No focal classes found for project '{comp['project']}'")
-            sys.exit(1)
+        focal_paths = _discover_focal_classes(comp["project"], limit=comp.get("limit"), output_dir=output_dir)
         return [{"project": comp["project"], "class_path": p} for p in focal_paths]
-
-    global_logger.error(
-        "Set comparison.project (with optional class_path or limit), "
-        "or comparison.batch_config in config.json"
-    )
+    
+    global_logger.error("[resolve_targets] Set comparison.project (with optional class_path or limit), or comparison.batch_config in config.json")
     sys.exit(1)
 
 
@@ -157,14 +142,7 @@ def _run_async_with_suppressed_io(coro_func) -> None:
     sys.stderr = _stderr
 
 
-def run_evogpt(
-    class_path: str,
-    project: str,
-    budget: int | float,
-    budget_type: str,
-    population: int,
-    output_dir: str,
-) -> tuple[Path | None, float]:
+def run_evogpt(class_path: str, project: str, budget: int | float, budget_type: str, population: int, output_dir: Path) -> tuple[Path | None, float]:
     """Run EvoGPT and return (test_file_path, elapsed_seconds)."""
     cfg = get()
     cfg.CLASS_PATH = class_path
@@ -216,7 +194,7 @@ def run_evogpt(
     return dest_file, elapsed
 
 
-def run_testart(class_path: str, project: str, output_dir: str) -> tuple[Path | None, float]:
+def run_testart(class_path: str, project: str, output_dir: Path) -> tuple[Path | None, float]:
     """Run TestART baseline (single LLM generation, no evolution)."""
     cfg = get()
     cfg.CLASS_PATH = class_path
@@ -265,8 +243,10 @@ def run_testart(class_path: str, project: str, output_dir: str) -> tuple[Path | 
     return dest_file, elapsed
 
 
-def run_evosuite(class_path: str, project: str, budget: int | float, budget_type: str, output_dir: str) -> tuple[Path | None, float, str | None]:
+def run_evosuite(class_path: str, project: str, budget: int | float, budget_type: str, population: int, output_dir: str) -> tuple[Path | None, float, str | None]:
     """Run EvoSuite and return (test_file_path, elapsed_seconds, runtime_jar)."""
+    # population is added just for the sake of consistency with the other functions
+    # but it is not used in EvoSuite
     runner = EvoSuiteRunner(project_name=project, class_path_source=class_path, output_base_dir=output_dir)
 
     global_logger.info(f"\n{'='*60}\n[EvoSuite] Running: {class_path} Budget: {budget} ({budget_type}\n{'='*60}")
@@ -319,8 +299,8 @@ def run_evogpt_seeded(class_path: str, project: str, budget: int | float, budget
         global_logger.info("[EvoGPT+EvoSuite] No LLM tests, falling back to unseeded EvoSuite")
         return run_evosuite(class_path, project, budget, budget_type, output_dir)
 
-    seed_base = os.path.join(output_dir, "evogpt_seeds", project, class_name)
-    os.makedirs(seed_base, exist_ok=True)
+    seed_base = output_dir / "evogpt_seeds" / project / class_name
+    seed_base.mkdir(parents=True, exist_ok=True)
 
     pkg = None
     try:
@@ -333,38 +313,31 @@ def run_evogpt_seeded(class_path: str, project: str, budget: int | float, budget
     except Exception:
         pass
 
-    seed_dir = os.path.join(seed_base, pkg.replace(".", os.sep)) if pkg else seed_base
-    os.makedirs(seed_dir, exist_ok=True)
+    seed_dir = seed_base / pkg.replace(".", os.sep) if pkg else seed_base
+    seed_dir.mkdir(parents=True, exist_ok=True)
 
     seeded_count = 0
     for chromo in gen.chromosomes:
         test_path = chromo.test_file_path
-        if test_path and os.path.isfile(test_path):
-            dest = os.path.join(seed_dir, f"{class_name}Test_seed{chromo.thread_id}.java")
+        if test_path and test_path.is_file():
+            dest = seed_dir / f"{class_name}Test_seed{chromo.thread_id}.java"
             try:
-                content = open(test_path, encoding="utf-8").read()
+                content = test_path.read_text(encoding="utf-8")
                 old_cls = f"{class_name}Test"
                 new_cls = f"{class_name}Test_seed{chromo.thread_id}"
                 content = content.replace(f"class {old_cls}", f"class {new_cls}")
-                with open(dest, "w", encoding="utf-8") as f:
-                    f.write(content)
+                dest.write_text(content, encoding="utf-8")
                 seeded_count += 1
             except Exception:
                 pass
 
     global_logger.info(f"[EvoGPT+EvoSuite] Phase 2: Seeding EvoSuite with {seeded_count} tests")
 
-    runner = EvoSuiteRunner(
-        project_name=project,
-        class_path_source=class_path,
-        output_base_dir=output_dir,
-    )
+    runner = EvoSuiteRunner(project_name=project, class_path_source=class_path, output_base_dir=output_dir)
     global_logger.info(f"[EvoGPT+EvoSuite] Phase 3: EvoSuite evolution (budget={budget} {budget_type})")
 
     evo_start = time.time()
-    test_file = runner.generate_tests(
-        budget=budget, budget_type=budget_type, seed_dir=seed_base,
-    )
+    test_file = runner.generate_tests(budget=budget, budget_type=budget_type, seed_dir=seed_base)
     total_elapsed = time.time() - start
     global_logger.info(f"[EvoGPT+EvoSuite] Done. LLM: {llm_elapsed:.1f}s, EvoSuite: {time.time()-evo_start:.1f}s, Total: {total_elapsed:.1f}s")
 
@@ -402,18 +375,17 @@ def _create_failed_row(project: str, class_name: str, tool: str, budget: str | i
     return _create_result_row(project, class_name, tool, budget, budget_type, metrics=None, elapsed=None)
 
 
-def _save_csv(results: list[dict], output_path: Path) -> None:
+def _save_csv(results: list[dict], results_path: Path) -> None:
     """Write results to CSV."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
         "project", "class", "tool", "budget", "budget_type",
         "branch_coverage", "line_coverage", "mutation_score", "elapsed",
     ]
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
+    with open(results_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
-    global_logger.info(f"Results saved to: {output_path}")
+    global_logger.info(f"Results saved to: {results_path}")
 
 
 def _print_results_table(results: list[dict]) -> None:
@@ -454,7 +426,7 @@ def _print_results_table(results: list[dict]) -> None:
 # -----------------------------------------------------------------------------
 
 
-def _run_and_record_testart(target: dict, output_dir: str, record_fn) -> None:
+def _run_and_record_testart(target: dict, output_dir: Path, record_fn) -> None:
     """Run TestART for a target and record the result."""
     project = target["project"]
     class_path = target["class_path"]
@@ -462,16 +434,12 @@ def _run_and_record_testart(target: dict, output_dir: str, record_fn) -> None:
 
     try:
         test_file, elapsed = run_testart(class_path, project, output_dir)
-        work_dir = os.path.join(output_dir, "eval", "testart", project, class_name)
+        work_dir = output_dir / "eval" / "testart" / project / class_name
         if test_file:
             metrics = _evaluate_test(project, class_path, test_file, work_dir)
-            row = _create_result_row(
-                project, class_name, "TestART", "N/A", "single", metrics, elapsed
-            )
+            row = _create_result_row(project, class_name, "TestART", "N/A", "single", metrics, elapsed)
         else:
-            row = _create_result_row(
-                project, class_name, "TestART", "N/A", "single", None, elapsed
-            )
+            row = _create_result_row(project, class_name, "TestART", "N/A", "single", None, elapsed)
         record_fn(row)
     except Exception as e:
         global_logger.error(f"[TestART] FAILED for {class_name}: {e}")
@@ -483,8 +451,9 @@ def _run_and_record_budget_tool(
     target: dict,
     budget: int | float,
     comp: dict,
-    output_dir: str,
+    output_dir: Path,
     tool_name: str,
+    population: int,
     run_fn,
     record_fn,
 ) -> None:
@@ -495,46 +464,30 @@ def _run_and_record_budget_tool(
     budget_type = comp["budget_type"]
 
     try:
-        result = run_fn(class_path, project, budget, budget_type, output_dir)
+        result = run_fn(class_path, project, budget, budget_type, population, output_dir)
         if len(result) == 3:
             test_file, elapsed, _runtime_jar = result
         else:
             test_file, elapsed = result
-
-        if tool_name == "EvoGPT":
-            work_dir = os.path.join(output_dir, "eval", "evogpt", project, class_name, f"{budget_type}_{budget}")
-        elif tool_name == "EvoSuite":
-            work_dir = os.path.join(output_dir, "eval", "evosuite", project, class_name, f"{budget_type}_{budget}")
-        else:
-            work_dir = os.path.join(output_dir, "eval", "hybrid", project, class_name, f"{budget_type}_{budget}")
+        
+        work_dir = output_dir / "eval" / TOOL_NAME_TO_DIR[tool_name] / project / class_name / f"{budget_type}_{budget}"
 
         if test_file:
-            compiled_source_dir = os.path.join(
-                output_dir, "evosuite_runs", project, class_name,
-                f"{budget_type}_{budget}", "compiled_source"
-            )
-            extra_cp = compiled_source_dir if os.path.isdir(compiled_source_dir) else None
+            compiled_source_dir = output_dir / "evosuite_runs" / project / class_name / f"{budget_type}_{budget}" / "compiled_source"
+            extra_cp = compiled_source_dir if compiled_source_dir.exists() else None
             metrics = _evaluate_test(project, class_path, test_file, work_dir, extra_cp=extra_cp)
-            row = _create_result_row(
-                project, class_name, tool_name, budget, budget_type, metrics, elapsed
-            )
+            row = _create_result_row(project, class_name, tool_name, budget, budget_type, metrics, elapsed)
         else:
-            row = _create_result_row(
-                project, class_name, tool_name, budget, budget_type, None, elapsed
-            )
+            row = _create_result_row(project, class_name, tool_name, budget, budget_type, None, elapsed)
         record_fn(row)
+    
     except Exception as e:
         global_logger.error(f"[{tool_name}] FAILED for {class_name} budget={budget}: {e}")
         traceback.print_exc()
         record_fn(_create_failed_row(project, class_name, tool_name, budget, budget_type))
 
 
-def _process_target(
-    target: dict,
-    comp: dict,
-    output_dir: str,
-    record_fn,
-) -> None:
+def _process_target(target: dict, comp: dict, output_dir: Path, record_fn) -> None:
     """Process a single target: run all tools and record results."""
 
     if not comp.get("skip_testart"):
@@ -543,28 +496,15 @@ def _process_target(
     for budget in comp["budgets"]:
         if not comp.get("skip_evogpt"):
             _run_and_record_budget_tool(
-                target, budget, comp, output_dir,
-                "EvoGPT",
-                lambda cp, p, b, bt, od: run_evogpt(
-                    cp, p, b, bt, comp["evogpt_population"], od
-                ),
-                record_fn,
+                target, budget, comp, output_dir, "EvoGPT", comp["evogpt_population"], run_evogpt, record_fn
             )
         if not comp.get("skip_evosuite"):
             _run_and_record_budget_tool(
-                target, budget, comp, output_dir,
-                "EvoSuite",
-                run_evosuite,
-                record_fn,
+                target, budget, comp, output_dir, "EvoSuite", 0, run_evosuite, record_fn
             )
         if not comp.get("skip_hybrid"):
             _run_and_record_budget_tool(
-                target, budget, comp, output_dir,
-                "EvoGPT+EvoSuite",
-                lambda cp, p, b, bt, od: run_evogpt_seeded(
-                    cp, p, b, bt, comp["hybrid_population"], od
-                ),
-                record_fn,
+                target, budget, comp, output_dir, "EvoGPT+EvoSuite", comp["hybrid_population"], run_evogpt_seeded, record_fn
             )
 
 
@@ -575,36 +515,32 @@ def _process_target(
 
 def main() -> int:
     """Main entry point: resolve targets, run comparison, save results."""
-    logger = _setup_logging()
     args = _parse_args()
-
     load(args.config)
     cfg = get()
     comp = cfg.comparison
-
+    output_dir = Path(cfg.run["output_dir"])
+    results_dir = output_dir / "results"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
     if comp.get("download_evosuite"):
         download_evosuite_jars(force=True)
-        print("EvoSuite JARs downloaded successfully.")
-        return 0
+        global_logger.info("EvoSuite JARs downloaded successfully.")
 
-    targets = _resolve_targets(cfg)
-    output_dir = comp["output_dir"]
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    csv_path = Path(output_dir) / "results.csv"
+    targets = _resolve_targets(comp, output_dir)
     all_results: list[dict] = []
 
     def record(row: dict) -> None:
         all_results.append(row)
-        _save_csv(all_results, csv_path)
+        _save_csv(all_results, results_dir / "results.csv")
 
     for idx, target in enumerate(targets, 1):
         class_name = Path(target["class_path"]).stem
-        logger.info(f"\n[{idx}/{len(targets)}] Processing {class_name} ...")
-        _process_target(target, comp, output_dir, record, logger)
+        global_logger.info(f"\n[{idx}/{len(targets)}] Processing {class_name} ...")
+        _process_target(target, comp, output_dir, record)
 
     _print_results_table(all_results)
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

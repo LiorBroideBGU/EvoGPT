@@ -39,6 +39,7 @@ module load anaconda				### load anaconda module (must be present when working w
 source activate ${conda_env}				### activate a conda environment, replace my_env with your conda environment
 echo $CONDA_DEFAULT_ENV     ### print the conda environment
 export PYTHONPATH=${work_dir}
+cd ${work_dir}
 python ${script}	${arguments}			### this command executes python script – replace with your own command
 
 cp -r ${cluster_temp_logs_path}/logs/* ${logs_dir}		### copy logs to the logs directory
