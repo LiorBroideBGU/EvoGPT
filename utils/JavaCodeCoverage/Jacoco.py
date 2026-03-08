@@ -43,7 +43,7 @@ class JavaCodeCoverage:
         jar_files = [p for p in self.classpath.glob("*.jar")]
         self.classpath_combined = os.pathsep.join(p.as_posix() for p in jar_files)
 
-    def compile_java_files(self, output_dir):
+    def compile_java_files(self, exec_dir: Path):
         """
         Compiles the Java test and source files using javac.
 
@@ -51,13 +51,12 @@ class JavaCodeCoverage:
         :return: bool indicating success or failure of the compilation process.
         """
         cfg = get_config()
-        output_dir = Path(output_dir)
         try:
             subprocess.run(
                 [
                     cfg.JAVAC_BIN,
                     "-cp", self.classpath_combined,  # Include all jars in the classpath
-                    "-d", str(output_dir),  # Output directory for .class files
+                    "-d", str(exec_dir),  # Output directory for .class files
                     str(self.java_files_dir / f"{self.test_class}Test.java"),  # Test class
                     str(self.java_files_dir / f"{self.test_class}.java")
                     # Source class
@@ -66,21 +65,21 @@ class JavaCodeCoverage:
                 capture_output=True,
                 text=True
             )
-            self.logger.debug(f"Compilation successful: {output_dir}")
+            self.logger.debug(f"Compilation successful: {exec_dir}")
             return True
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Compilation failed: {e.stderr}")
             return False
 
-    def run_tests_with_coverage(self, output_dir: Path):
+    def run_tests_with_coverage(self, exec_dir: Path):
         """
         Runs the compiled tests with JaCoCo agent to collect coverage data.
 
-        :param output_dir: Directory containing the compiled .class files.
+        :param exec_dir: Directory containing the compiled .class files.
         :return: bool indicating if the tests ran successfully and generated coverage data.
         """
         jacoco_agent = self.classpath / "jacocoagent.jar"
-        coverage_file = output_dir / "coverage.exec"
+        coverage_file = exec_dir / "coverage.exec"
 
         cfg = get_config()
         try:
@@ -88,7 +87,7 @@ class JavaCodeCoverage:
                 [
                     cfg.JAVA_BIN,
                     "-javaagent:" + str(jacoco_agent) + f"=destfile={coverage_file}",  # JaCoCo agent argument
-                    "-cp", f"{str(output_dir)}{os.pathsep}{self.classpath_combined}",
+                    "-cp", f"{str(exec_dir)}{os.pathsep}{self.classpath_combined}",
                     "org.junit.runner.JUnitCore",  # Run the JUnit tests
                     self.test_class + 'Test'  # The test class name
                 ],
@@ -103,14 +102,15 @@ class JavaCodeCoverage:
             self.logger.error(f"Test run failed: {e.stderr}")
             return False
 
-    def convert_exec_to_xml(self,output_dir):
+    def convert_exec_to_xml(self, exec_dir: Path):
         """
         Converts the JaCoCo .exec coverage file into an XML format using JaCoCo's CLI.
 
-        :param output_dir: Directory to save the .exec coverage data.
+        :param exec_dir: Directory containing coverage.exec and .class files (and where coverage.xml is written).
         """
         cfg = get_config()
-        output_dir = Path(output_dir)
+        classfiles_dir = (exec_dir / "unit_tests" / self.project_name / self.test_class / str(self.thread_id) / "classfiles") if self.thread_id else self.java_files_dir / "classfiles"
+        sourcefiles_dir = (exec_dir / "unit_tests" / self.project_name / self.test_class / str(self.thread_id) / "javafiles") if self.thread_id else self.java_files_dir
         try:
             subprocess.run(
                 [
@@ -118,28 +118,24 @@ class JavaCodeCoverage:
                     "-jar",
                     str(Path("lib", "jars", "jacococli.jar").resolve()),
                     "report",
-                    str(output_dir / "coverage.exec"),  # .exec file to report on
-                    "--classfiles",
-                    str(Path("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles")) if self.thread_id else str(self.java_files_dir.parent / "classfiles"),
-                    # Path to class files (compiled files)
-                    "--sourcefiles",
-                    str(Path("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "javafiles")) if self.thread_id else str(self.java_files_dir),
-                    # Path to the source files
-                    "--xml", str(output_dir / "coverage.xml")  # Output in XML format
+                    str(exec_dir / "coverage.exec"),
+                    "--classfiles", str(classfiles_dir),
+                    "--sourcefiles", str(sourcefiles_dir),
+                    "--xml", str(exec_dir / "coverage.xml")
                 ],
                 check=True
             )
-            self.logger.debug(f"Conversion to XML successful: {output_dir / 'coverage.xml'}")
+            self.logger.debug(f"Conversion to XML successful: {exec_dir / 'coverage.xml'}")
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Error converting .exec to .xml: {str(e)}")
 
-    def generate_coverage_report(self):
+    def generate_coverage_report(self, output_path: Path):
         """
         Generates the coverage report by compiling, running tests with JaCoCo,
         and converting the .exec file to an XML report.
         """
         if self.thread_id:
-            build_dir = Path("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles")
+            build_dir = output_path / "unit_tests" / self.project_name / self.test_class / str(self.thread_id) / "classfiles"
         else:
             parent_path = self.java_files_dir.parent
             build_dir = parent_path / "classfiles"
@@ -154,7 +150,6 @@ class JavaCodeCoverage:
             return False
 
         # Step 3: Convert the .exec file to XML format
-
         self.convert_exec_to_xml(build_dir)
 
         return True
@@ -261,23 +256,21 @@ class JavaCodeCoverage:
 
         return coverage_results, missed_branch_lines
 
-    def get_average_coverage(self, thread_number=None):
+    def get_average_coverage(self, thread_number=None, output_path: Path = Path.cwd()):
         """
         Returns a tuple of (average_branch_coverage, average_line_coverage) across all non-test methods.
         Methods without any branches count as 100% branch coverage.
         """
         # Step 1: Generate coverage report
-        success = self.generate_coverage_report()
+        success = self.generate_coverage_report(output_path=output_path)
         if not success:
             raise RuntimeError("Coverage report generation failed.")
 
         # Step 2: Determine XML path
 
-        xml_path = os.path.join(
-            "results", "unit_tests", self.project_name, self.test_class,
-            str(thread_number),"classfiles", "coverage.xml"
-        ) if thread_number else os.path.join(os.path.dirname(self.java_files_dir),"classfiles", "coverage.xml")
-        if not os.path.exists(xml_path):
+        xml_path = (output_path / "unit_tests" / self.project_name / self.test_class / str(thread_number) / "classfiles" / "coverage.xml" if thread_number
+        else self.java_files_dir.parent / "classfiles" / "coverage.xml")
+        if not xml_path.exists():
             raise FileNotFoundError(f"JaCoCo XML not found at: {xml_path}")
 
         # Step 3: Parse coverage data

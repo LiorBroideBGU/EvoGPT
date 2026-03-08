@@ -29,7 +29,7 @@ class ChromosomesGenerator:
         self.lock = threading.Lock()
         self.crossover_probability = 0.8
 
-    async def threaded_generation(self, thread_number: int, temperature: float, max_retries: int = 3):
+    async def threaded_generation(self, thread_number: int, temperature: float, max_retries: int = 3, output_path: Path = Path.cwd()):
         import sys as _sys
 
         for attempt in range(1, max_retries + 1):
@@ -42,10 +42,10 @@ class ChromosomesGenerator:
 
                 # Generation + Repair loop (initial)
                 await unit_test_generator.generation_repair_loop(java_file_path=self.source_code_path, project_id=project_id,
-                                                           thread_number=thread_number)
+                                                           thread_number=thread_number, output_path=output_path)
 
                 # Verify the test compiles before proceeding to coverage
-                results_base = Path.cwd() / 'results' / 'unit_tests' / self.project_name / self.class_name / str(thread_number)
+                results_base = output_path / 'unit_tests' / self.project_name / self.class_name / str(thread_number)
                 javafiles_dir = results_base / 'javafiles'
                 classfiles_dir = results_base / 'classfiles'
 
@@ -60,36 +60,27 @@ class ChromosomesGenerator:
                     raise RuntimeError(f"Test failed to run after repair loop: {run_err[:300]}")
 
                 # Coverage
-                jcc = JavaCodeCoverage(
-                    javafiles_dir,
-                    self.class_name,
-                    self.project_name,
-                    thread_id=thread_number
-                )
-                coverage_ok = jcc.generate_coverage_report()
-                coverage_xml_path = os.path.join(classfiles_dir, 'coverage.xml')
+                jcc = JavaCodeCoverage(javafiles_dir=javafiles_dir, test_class=self.class_name, project_name=self.project_name, thread_id=thread_number)
+                coverage_ok = jcc.generate_coverage_report(output_path=output_path)
+                coverage_xml_path = classfiles_dir / 'coverage.xml'
 
-                if coverage_ok and os.path.isfile(coverage_xml_path):
+                if coverage_ok and coverage_xml_path.exists():
                     coverage_metrics, missed_branches = jcc.parse_jacoco_xml(coverage_xml_path)
 
                     # Enhancements
                     test_enhancements = CoverageEnhancementAgent(
-                        api_key=cfg.API_KEY,
-                        model=cfg.MODEL,
-                        temperature=temperature,
-                        java_file_path=self.source_code_path
-                    )
-                    await test_enhancements.generation_repair_loop(coverage_metrics, missed_branches, thread_number=thread_number)
+                        api_key=cfg.API_KEY, model=cfg.MODEL, temperature=temperature, java_file_path=self.source_code_path)
+                    await test_enhancements.generation_repair_loop(coverage_metrics, missed_branches, thread_number=thread_number, output_path=output_path)
 
                     first_unit_test = read_java_file_as_string(
-                        os.path.join(javafiles_dir, f'{self.class_name}Test.java'))
+                        javafiles_dir / f'{self.class_name}Test.java')
                     enhanced_unit_test = read_java_file_as_string(
-                        os.path.join(javafiles_dir, f'{self.class_name}EnhancedTest.java'))
+                        javafiles_dir / f'{self.class_name}EnhancedTest.java')
                     final_unit_test = merge_java_unit_tests(first_unit_test, enhanced_unit_test, f'{self.class_name}Test')
                 else:
                     self.logger.debug(f"Thread-{thread_number} coverage report failed; skipping enhancement, using base test")
                     final_unit_test = read_java_file_as_string(
-                        os.path.join(javafiles_dir, f'{self.class_name}Test.java')
+                        javafiles_dir / f'{self.class_name}Test.java'
                     )
 
                 # Cleanup
@@ -101,7 +92,7 @@ class ChromosomesGenerator:
                 chromosome_path = javafiles_dir
                 with self.lock:
                     chromosome = Chromosome(path=chromosome_path, thread_id=thread_number)
-                    chromosome.compute_fitness()
+                    chromosome.compute_fitness(output_path=output_path)
 
                 with self.lock:
                     self.chromosomes.append(chromosome)
@@ -158,13 +149,14 @@ class ChromosomesGenerator:
         for chromosome in self.chromosomes:
             chromosome.compute_fitness()
 
-    async def _inject_llm_tests(self, best_chromosome):
+    async def _inject_llm_tests(self, best_chromosome, output_path: Path):
         """
         CodaMosa-style LLM injection: Generate targeted test methods and inject them
         into the best chromosome's test suite to escape coverage plateaus.
         
         Args:
             best_chromosome: The chromosome with the highest fitness score
+            output_path: The path to the output directory
         """
         # Initialize the PlateauEscapeAgent
         cfg = get_config()
@@ -253,12 +245,12 @@ class ChromosomesGenerator:
         # Recompute fitness for the modified chromosome
         self.logger.debug(f"Recomputing fitness for injected chromosome...")
         best_chromosome.code_length = len(read_java_file_as_string(best_chromosome.test_file_path))
-        best_chromosome.compute_fitness()
+        best_chromosome.compute_fitness(output_path=output_path)
         
         self.logger.debug(f"Injection successful! New fitness: {best_chromosome.fitness_score:.3f}")
         self.logger.debug(f"Branch: {best_chromosome.branch_coverage:.1f}%, Line: {best_chromosome.line_coverage:.1f}%, Mutation: {best_chromosome.mutation_score:.1f}%")
 
-    async def evolution_generation(self, max_generations=25, time_limit_seconds=None):
+    async def evolution_generation(self, max_generations=25, time_limit_seconds=None, output_path: Path = Path.cwd()):
         if not self.chromosomes:
             raise RuntimeError("No chromosomes were generated in the initial population. "
                                "All LLM agents failed to produce valid tests.")
@@ -299,8 +291,8 @@ class ChromosomesGenerator:
                     offspring1_code, offspring2_code = parent1.crossover(parent2)
                 else:
                     offspring1_code, offspring2_code = read_java_file_as_string(parent1.test_file_path), read_java_file_as_string(parent2.test_file_path)
-                self.save_chromosome_code(offspring_pairs_generated, offspring1_code, offspring2_code, cfg.results_dir)
-                base_path = Path(cfg.results_dir) / "unit_tests" / self.project_name / self.class_name / "offsprings" / str(offspring_pairs_generated)
+                self.save_chromosome_code(offspring_pairs_generated, offspring1_code, offspring2_code, str(output_path))
+                base_path = output_path / "unit_tests" / self.project_name / self.class_name / "offsprings" / str(offspring_pairs_generated)
                 offspring1 = self.create_chromosome(base_path / "offspring1" / "javafiles")
                 offspring2 = self.create_chromosome(base_path / "offspring2" / "javafiles")
 
@@ -339,8 +331,8 @@ class ChromosomesGenerator:
                 
                 # Parallel fitness computation (3x faster than sequential)
                 await asyncio.gather(
-                    asyncio.to_thread(offspring1.compute_fitness),
-                    asyncio.to_thread(offspring2.compute_fitness)
+                    asyncio.to_thread(offspring1.compute_fitness, output_path),
+                    asyncio.to_thread(offspring2.compute_fitness, output_path)
                 )
                 best_parent_fitness = max(parent1.fitness_score, parent2.fitness_score)
                 best_offspring_fitness = max(offspring1.fitness_score, offspring2.fitness_score)
@@ -386,7 +378,7 @@ class ChromosomesGenerator:
                     self.logger.debug(f"{'='*60}")
                     
                     try:
-                        await self._inject_llm_tests(current_best)
+                        await self._inject_llm_tests(current_best, output_path)
                         stagnation_counter = 0  # Reset counter after injection
                         injection_count += 1
                         # Update best fitness after injection
@@ -421,35 +413,36 @@ class ChromosomesGenerator:
         self.logger.debug(f"{'='*60}\n")
         return final_best
 
-    async def generate_final_unit_test(self, n_chromosomes=30, max_generations=25, time_limit_seconds=None):
+    async def generate_final_unit_test(self, n_chromosomes=30, max_generations=25, time_limit_seconds=None, output_path: Path = Path.cwd()):
         base_temps = [0.3, 0.4, 0.5, 0.6, 0.8]
 
         # Cycle through base temperatures to fill n_chromosomes slots
         temperatures = [base_temps[i % len(base_temps)] for i in range(n_chromosomes)]
         tasks = [
-            self.threaded_generation(i + 1, temp)
+            self.threaded_generation(i + 1, temp, output_path=output_path)
             for i, temp in enumerate(temperatures)
         ]
         await asyncio.gather(*tasks)
         self.logger.debug(f"All async agents finished. Population size: {len(self.chromosomes)}")
-        final = await self.evolution_generation(max_generations=max_generations, time_limit_seconds=time_limit_seconds)
+        final = await self.evolution_generation(max_generations=max_generations, time_limit_seconds=time_limit_seconds, output_path=output_path)
 
         self.logger.debug(f"BEST CHROMOSOME: {final}")
         self.logger.debug(
             f"Line coverage: {final.line_coverage}, Branch coverage: {final.branch_coverage}, Mutation Score: {final.mutation_score}, Test Strength: {final.tests_strength}")
 
         # Save only the best chromosome's test suite and clean up everything else
-        self._save_best_and_cleanup(final)
+        self._save_best_and_cleanup(final, output_path)
 
-    def _save_best_and_cleanup(self, best_chromosome):
+    def _save_best_and_cleanup(self, best_chromosome, output_path: Path | None = None):
         """
         Save the best chromosome's test suite to the final location and delete all other files.
-        Final location: results/unit_tests/{project_name}/{class_name}/{class_name}Test.java
+        Final location: {output_path}/unit_tests/{project_name}/{class_name}/{class_name}Test.java
         """
         import shutil
-        
+        cfg = get_config()
+        effective_output = Path(output_path) if output_path is not None else (Path(cfg.results_dir) if cfg.results_dir else Path.cwd())
         # Define final directory path
-        final_dir = Path(cfg.results_dir) / "unit_tests" / self.project_name / self.class_name
+        final_dir = effective_output / "unit_tests" / self.project_name / self.class_name
         final_test_path = final_dir / f"{self.class_name}Test.java"
         
         # Read the best chromosome's test suite - handle missing file
@@ -477,7 +470,7 @@ class ChromosomesGenerator:
         final_source_path = final_dir / f"{self.class_name}.java"
         
         # Create a temporary backup directory to store the best test before cleanup
-        temp_backup_dir = Path(cfg.results_dir) / "unit_tests" / f".temp_backup_{self.class_name}"
+        temp_backup_dir = effective_output / "unit_tests" / f".temp_backup_{self.class_name}"
         temp_backup_dir.mkdir(parents=True, exist_ok=True)
         temp_test_backup = temp_backup_dir / f"{self.class_name}Test.java"
         temp_source_backup = temp_backup_dir / f"{self.class_name}.java"
@@ -488,8 +481,8 @@ class ChromosomesGenerator:
         
         self.logger.debug(f"Saving best test suite and cleaning up...")
         
-        # Delete the entire results directory for this project and class
-        project_results_dir = Path(cfg.results_dir) / "unit_tests" / self.project_name / self.class_name
+        # Delete the entire output directory for this project and class
+        project_results_dir = effective_output / "unit_tests" / self.project_name / self.class_name
         if os.path.exists(project_results_dir):
             cfg = get_config()
             if not cfg.PRESERVE_INITIAL_POOL:

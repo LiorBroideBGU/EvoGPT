@@ -1,9 +1,7 @@
 from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.MutationScoreGenerator.PITest import PITestRunner
-# from llm_agents.mutation_assertion_generation_agent import MutationAssertionGenerator
 from utils.function_utils import *
 import random
-import uuid
 from config.config_loader import get_config
 from pathlib import Path
 
@@ -85,10 +83,11 @@ class Chromosome:
                 
         raise FileNotFoundError(f"No Java test file found in {self.path}")
 
-    def compute_fitness(self):
+    def compute_fitness(self, output_path: Path):
         """
         Compute the code's metrics and fitness score for this chromosome.
         Based on line coverage, branch coverage and mutation score.
+        :param output_path: The path to the output directory
         """
         self._fix_runtime_errors()
 
@@ -108,7 +107,7 @@ class Chromosome:
             source_dir=java_files_dir,
             report_dir=parent_dir / "pitest_report",
         )
-        self.branch_coverage, self.line_coverage = jcc.get_average_coverage(thread_number=self.thread_id)
+        self.branch_coverage, self.line_coverage = jcc.get_average_coverage(thread_number=self.thread_id, output_path=output_path)
         self.mutation_score, self.tests_strength = mutation_scorer.run(self.java_file_name + 'Test')
         
         self.fitness_score = 0.3 * self.branch_coverage + 0.2 * self.line_coverage + 0.5 * self.mutation_score

@@ -46,7 +46,8 @@ TOOL_NAME_TO_DIR = {
 def _setup_logging() -> logging.Logger:
     """Configure logging and return the main logger."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
-    handlers=[RotatingFileHandler(f"{os.getenv('LOGGING_DIRECTORY', 'logs')}/comparison.log", maxBytes=10*1024*1024)])
+    # handlers=[RotatingFileHandler(f"{os.getenv('LOGGING_DIRECTORY', 'logs')}/comparison.log", maxBytes=10*1024*1024)]
+    )
     return logging.getLogger(__name__)
 
 
@@ -164,7 +165,7 @@ def run_evogpt(class_path: str, project: str, budget: int | float, budget_type: 
 
     async def _run():
         try:
-            await gen.generate_final_unit_test(max_generations=cfg.EVO_GENERATIONS, n_chromosomes=population, time_limit_seconds=time_limit)
+            await gen.generate_final_unit_test(max_generations=cfg.EVO_GENERATIONS, n_chromosomes=population, time_limit_seconds=time_limit, output_path=output_dir)
         finally:
             pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
             for t in pending:
@@ -176,18 +177,18 @@ def run_evogpt(class_path: str, project: str, budget: int | float, budget_type: 
     elapsed = time.time() - start
 
     class_name = Path(class_path).stem
-    result_test = Path("results", "unit_tests", project, class_name, f"{class_name}Test.java")
+    result_test = output_dir / "unit_tests" / project / class_name / f"{class_name}Test.java"
 
     if not result_test.exists():
         global_logger.info(f"[EvoGPT] No test generated at {result_test}")
         return None, elapsed
 
-    dest_dir = Path(output_dir, "evogpt_tests", project, class_name, f"{budget_type}_{budget}")
+    dest_dir = output_dir / "evogpt_tests" / project / class_name / f"{budget_type}_{budget}"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_file = dest_dir / f"{class_name}Test.java"
     shutil.copy(result_test, dest_file)
 
-    source_in_results = Path("results", "unit_tests", project, class_name, f"{class_name}.java")
+    source_in_results = output_dir / "unit_tests" / project / class_name / f"{class_name}.java"
     if source_in_results.exists():
         shutil.copy(source_in_results, dest_dir / f"{class_name}.java")
 
@@ -208,7 +209,7 @@ def run_testart(class_path: str, project: str, output_dir: Path) -> tuple[Path |
 
     async def _run():
         try:
-            await gen.threaded_generation(thread_number=1, temperature=0.5)
+            await gen.threaded_generation(thread_number=1, temperature=0.5, output_path=output_dir)
         finally:
             pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
             for t in pending:
@@ -230,12 +231,12 @@ def run_testart(class_path: str, project: str, output_dir: Path) -> tuple[Path |
         global_logger.info(f"[TestART] No test file at {result_test}")
         return None, elapsed
 
-    dest_dir = Path(output_dir, "testart_tests", project, class_name)
+    dest_dir = output_dir / "testart_tests" / project / class_name
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_file = dest_dir / f"{class_name}Test.java"
     shutil.copy(result_test, dest_file)
 
-    source_in_results = Path("results", "unit_tests", project, class_name, f"{class_name}.java")
+    source_in_results = output_dir / "unit_tests" / project / class_name / f"{class_name}.java"
     if source_in_results.exists():
         shutil.copy(source_in_results, dest_dir / f"{class_name}.java")
 
@@ -258,7 +259,7 @@ def run_evosuite(class_path: str, project: str, budget: int | float, budget_type
     return test_file, elapsed, runner.get_runtime_jar()
 
 
-def run_evogpt_seeded(class_path: str, project: str, budget: int | float, budget_type: str, population: int, output_dir: str) -> tuple[Path | None, float, str | None]:
+def run_evogpt_seeded(class_path: str, project: str, budget: int | float, budget_type: str, population: int, output_dir: Path) -> tuple[Path | None, float, str | None]:
     """Run hybrid: LLM population then EvoSuite with seeds."""
     import re as _re
 
@@ -280,7 +281,7 @@ def run_evogpt_seeded(class_path: str, project: str, budget: int | float, budget
     async def _generate_population():
         try:
             tasks = [
-                gen.threaded_generation(i + 1, temp)
+                gen.threaded_generation(i + 1, temp, output_path=output_dir)
                 for i, temp in enumerate(temperatures)
             ]
             await asyncio.gather(*tasks)
@@ -297,7 +298,7 @@ def run_evogpt_seeded(class_path: str, project: str, budget: int | float, budget
 
     if not gen.chromosomes:
         global_logger.info("[EvoGPT+EvoSuite] No LLM tests, falling back to unseeded EvoSuite")
-        return run_evosuite(class_path, project, budget, budget_type, output_dir)
+        return run_evosuite(class_path, project, budget, budget_type, 0, output_dir)
 
     seed_base = output_dir / "evogpt_seeds" / project / class_name
     seed_base.mkdir(parents=True, exist_ok=True)
@@ -397,11 +398,11 @@ def _print_results_table(results: list[dict]) -> None:
     header = f"{'Project':<20} {'Class':<20} {'Tool':<18} {'Budget':>8} {'Type':<12} {'Branch%':>9} {'Line%':>9} {'Mutation%':>11} {'Time(s)':>9}"
     sep = "-" * len(header)
 
-    global_logger.info(f"\n{'='*len(header)}")
-    global_logger.info("COMPARISON RESULTS")
-    global_logger.info(f"{'='*len(header)}")
-    global_logger.info(header)
-    global_logger.info(sep)
+    print(f"\n{'='*len(header)}")
+    print("COMPARISON RESULTS")
+    print(f"{'='*len(header)}")
+    print(header)
+    print(sep)
 
     prev_key = None
     for r in results:
@@ -489,7 +490,7 @@ def _run_and_record_budget_tool(
 
 def _process_target(target: dict, comp: dict, output_dir: Path, record_fn) -> None:
     """Process a single target: run all tools and record results."""
-
+    global_logger.info(f"Processing target: {target}")
     if not comp.get("skip_testart"):
         _run_and_record_testart(target, output_dir, record_fn)
 
@@ -504,7 +505,7 @@ def _process_target(target: dict, comp: dict, output_dir: Path, record_fn) -> No
             )
         if not comp.get("skip_hybrid"):
             _run_and_record_budget_tool(
-                target, budget, comp, output_dir, "EvoGPT+EvoSuite", comp["hybrid_population"], run_evogpt_seeded, record_fn
+                target, budget, comp, output_dir, "EvoGPT+EvoSuite", comp["hybrid_population"], run_evogpt_seeded, record_fn, 
             )
 
 
@@ -519,10 +520,9 @@ def main() -> int:
     load(args.config)
     cfg = get()
     comp = cfg.comparison
-    output_dir = Path(cfg.run["output_dir"])
-    results_dir = output_dir / "results"
+    output_dir = Path(comp["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
-    results_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "results").mkdir(parents=True, exist_ok=True)
     if comp.get("download_evosuite"):
         download_evosuite_jars(force=True)
         global_logger.info("EvoSuite JARs downloaded successfully.")
@@ -532,7 +532,7 @@ def main() -> int:
 
     def record(row: dict) -> None:
         all_results.append(row)
-        _save_csv(all_results, results_dir / "results.csv")
+        _save_csv(all_results, output_dir / "results" / "results.csv")
 
     for idx, target in enumerate(targets, 1):
         class_name = Path(target["class_path"]).stem

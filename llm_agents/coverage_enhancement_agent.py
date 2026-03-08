@@ -14,7 +14,7 @@ class CoverageEnhancementAgent(UnitTestGenerator):
         super().__init__(api_key, model, temperature)
         self.java_file_path = java_file_path
 
-    async def generation_repair_loop(self,coverage_metrics: dict, missed_branches: list, iterations: int = 4, thread_number: int = None):
+    async def generation_repair_loop(self,coverage_metrics: dict, missed_branches: list, iterations: int = 4, thread_number: int = None, output_path: Path = Path.cwd()):
         """
         Generates a coverage enhancement for the given class.
         :param coverage_metrics: The coverage metrics
@@ -31,9 +31,9 @@ class CoverageEnhancementAgent(UnitTestGenerator):
         self.update_long_term_memory('session1', INPUT_PROMPT.format(java_code, coverage_metrics, missed_branches))
         current_test_suite = await self.get_unit_test_for_class(session_id='session1')
         if thread_number:
-            test_file_path = Path("results", "unit_tests", project_id, java_class_name, str(thread_number), "javafiles", f"{java_class_name}EnhancedTest.java")
+            test_file_path = output_path / "unit_tests" / project_id / java_class_name / str(thread_number) / "javafiles" / f"{java_class_name}EnhancedTest.java"
         else:
-            test_file_path = Path("results", "unit_tests", project_id, java_class_name, "javafiles", f"{java_class_name}EnhancedTest.java")
+            test_file_path = output_path / "unit_tests" / project_id / java_class_name / "javafiles" / f"{java_class_name}EnhancedTest.java"
         test_file_path.parent.mkdir(parents=True, exist_ok=True)
         save_test_suite(current_test_suite, test_file_path)
 

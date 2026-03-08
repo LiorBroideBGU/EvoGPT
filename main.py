@@ -76,7 +76,7 @@ def _resolve_paths_and_update_config(cfg: dict) -> Path:
     return _resolve_local_paths(cfg, output_dir)
 
 
-def _run_generator(cfg: dict, class_path: Path) -> None:
+def _run_generator(cfg: dict, class_path: Path, output_dir: Path) -> None:
     """Create ChromosomesGenerator and run the evolutionary test generation."""
     from app.chromosomes_generator import ChromosomesGenerator
 
@@ -88,6 +88,7 @@ def _run_generator(cfg: dict, class_path: Path) -> None:
         generator.generate_final_unit_test(
             max_generations=cfg.EVO_GENERATIONS,
             n_chromosomes=cfg.EVO_POPULATION,
+            output_path=output_dir,
         )
     )
 
@@ -100,9 +101,10 @@ def main() -> int:
     cfg = load(args.config)
     _validate_run_config(cfg, logger)
     class_path = _resolve_paths_and_update_config(cfg)
+    output_dir = Path(cfg.run["output_dir"])
 
     logger.info("Starting the application")
-    _run_generator(cfg, class_path)
+    _run_generator(cfg, class_path, output_dir)
     logger.info("Application finished")
 
     return 0

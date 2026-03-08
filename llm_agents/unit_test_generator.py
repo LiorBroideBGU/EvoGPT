@@ -37,7 +37,7 @@ class UnitTestGenerator(LLMAgent):
         await history.add_assistant_message(response.content)
         return response.content
 
-    async def generation_repair_loop(self, java_file_path: Path, project_id: str, iterations: int = 4, thread_number: int = None):
+    async def generation_repair_loop(self, java_file_path: Path, project_id: str, iterations: int = 4, thread_number: int = None, output_path: Path = Path.cwd()):
         """
         Generates a unit test for the given class.
         :param java_file_path: The path to the Java file
@@ -58,9 +58,9 @@ class UnitTestGenerator(LLMAgent):
         self.logger.debug(f"Current test suite: {current_test_suite}")
 
         if thread_number:
-            base_dir = Path("results", "unit_tests", project_id, java_class_name, str(thread_number), "javafiles")
+            base_dir = output_path / "unit_tests" / project_id / java_class_name / str(thread_number) / "javafiles"
         else:
-            base_dir = Path("results", "unit_tests", project_id, java_class_name, "javafiles")
+            base_dir = output_path / "unit_tests" / project_id / java_class_name / "javafiles"
 
         test_file_path = base_dir / f"{java_class_name}Test.java"
         source_file_path = base_dir / f"{java_class_name}.java"
