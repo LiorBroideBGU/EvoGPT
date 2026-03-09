@@ -27,3 +27,5 @@ config/*.pyd
 
 # Generated cluster job files (sbatch, configs)
 cluster_experiments/jobs/
+
+.env

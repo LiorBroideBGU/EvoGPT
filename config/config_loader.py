@@ -3,10 +3,14 @@ Config loader: loads configuration from JSON and provides a mutable Config insta
 Must call load(path) before any module that uses config is imported.
 """
 
+import os
 import json
 from pathlib import Path
 from typing import Any
+from dotenv import load_dotenv
 
+# Load environment variables from the .env file (if present)
+load_dotenv()
 
 def _get(data: dict, key: str, default: Any) -> Any:
     """Helper to safely get a value, handling nested keys."""
@@ -18,7 +22,7 @@ class Config:
 
     def __init__(self, data: dict):
         # Core settings
-        self.API_KEY = _get(data, "API_KEY", "<your-api-key>")
+        self.API_KEY = os.getenv("API_KEY")
         self.CLASS_PATH = _get(
             data, "CLASS_PATH",
             "benchmarks/gson/src/main/java/com/google/gson/JsonArray.java"

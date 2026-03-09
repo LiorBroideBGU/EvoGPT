@@ -300,7 +300,7 @@ class ProgrammaticMutator:
                     )
                     
                     # Save and validate
-                    save_test_suite(current_test_code, self.unit_test_path)
+                    save_code(current_test_code, self.unit_test_path)
                     result, stacktrace = self.unit_test_java_executor.run_java()
                     
                     if result:
@@ -310,13 +310,13 @@ class ProgrammaticMutator:
                     else:
                         # Mutation broke tests - rollback this one only
                         current_test_code = before_mutation
-                        save_test_suite(current_test_code, self.unit_test_path)
+                        save_code(current_test_code, self.unit_test_path)
                         # Silent rollback - this is expected behavior
                         
                 except Exception as e:
                     # Mutation operation failed - rollback
                     current_test_code = before_mutation
-                    save_test_suite(current_test_code, self.unit_test_path)
+                    save_code(current_test_code, self.unit_test_path)
                     # Silent rollback
         
         if mutations_applied > 0:

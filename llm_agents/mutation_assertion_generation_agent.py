@@ -154,10 +154,10 @@ class MutationAssertionGenerator(LLMAgent):
                 self.update_long_term_memory('session1', INPUT_PROMPT.format(test_method, old_java_source_code, f"Fields: {fields}, Imports: {imports}"))
                 new_test_method =  await self.get_model_response()
                 new_unit_test = self.replace_test_method(old_unit_test, new_test_method)
-                save_test_suite(new_unit_test, self.unit_test_path)
+                save_code(new_unit_test, self.unit_test_path)
                 result, stacktrace = self.unit_test_java_executor.run_java()
                 if not result:
-                    save_test_suite(old_unit_test, self.unit_test_path)
+                    save_code(old_unit_test, self.unit_test_path)
 
 
 

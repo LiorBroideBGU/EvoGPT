@@ -21,9 +21,6 @@ def unzip_dataset(dataset_name: str, target_path: Path, dataset_path: Path):
         zip_ref.extractall(target_path)
 
 
-
-
-
 def add_imports(imports: List[str], java_code: str):
     """
     Concatenates the imports list into the java code.
@@ -33,6 +30,7 @@ def add_imports(imports: List[str], java_code: str):
     lines = java_code.splitlines()
     imports.extend(lines)
     return '\n'.join(imports)
+
 
 def get_class_imports(source_folder: Path, stacktrace: str):
     """
@@ -88,6 +86,7 @@ def get_class_imports(source_folder: Path, stacktrace: str):
             imports.append(f"import {full_import};")
 
     return list(sorted(set(imports)))
+
 
 def get_error_functions(stacktrace: str, code: str):
     """
@@ -196,14 +195,16 @@ def remove_junit_tests_using_test_names(java_code: str, function_names: list) ->
 
     return "\n".join(lines)
 
+
 def remove_junit_tests(java_code: str, stacktrace: str) -> str:
     function_list = get_error_functions(stacktrace, java_code)
     return remove_junit_tests_using_test_names(java_code, function_list)
 
+
 def clean_java_code(code: str) -> str:
     """
     Cleans a Java code block by removing comments and redundant blank lines.
-    :param code (str): The Java code block as a string.
+    :param code: The Java code block as a string.
     :return str: Cleaned Java code block.
     """
     # Remove single-line comments (//...)
@@ -222,6 +223,7 @@ def clean_java_code(code: str) -> str:
 
     return cleaned_code
 
+
 def read_java_file_as_string(java_file_path):
     try:
         with open(java_file_path, "r", encoding="utf-8") as file:
@@ -233,15 +235,10 @@ def read_java_file_as_string(java_file_path):
         print(f"An error occurred: {e}")
 
 
-def save_test_suite(test_suite_code: str, test_file_path: Path | str):
-    path = Path(test_file_path)
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(test_suite_code, encoding="utf-8")
-    except Exception:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(test_suite_code, encoding="utf-8")
-
+def save_code(code_content: str, dest_path: Path | str):
+    path = Path(dest_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(code_content, encoding="utf-8")
 
 
 def extract_project_name(path: Path, root_hint: str | Path | None = None) -> Path:
@@ -272,7 +269,6 @@ def extract_project_name(path: Path, root_hint: str | Path | None = None) -> Pat
     return path.parent
 
 
-
 def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -> str:
     """
     Merges two Java unit tests into a single Java unit test.
@@ -281,6 +277,7 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
     :param class_name: The name of the class.
     :return: The merged Java unit test.
     """
+
     def get_package(code: str):
         match = re.search(r'^package\s+[\w.]+\s*;', code, re.MULTILINE)
         return match.group(0) if match else None
@@ -484,8 +481,6 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
     return merged_code
 
 
-
-
 def delete_paths(paths_to_delete: list[Path]) -> bool:
     """
     Deletes the file at the given file path.
@@ -503,7 +498,7 @@ def delete_paths(paths_to_delete: list[Path]) -> bool:
 
             elif path.is_dir():
                 shutil.rmtree(path)
-        
+
         return True
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -692,17 +687,17 @@ def extract_test_context(test_file_code: str) -> dict:
         'setup_methods': [],
         'context_string': ''
     }
-    
+
     # Extract imports
     import_pattern = re.compile(r'^import\s+.*?;', re.MULTILINE)
     context['imports'] = import_pattern.findall(test_file_code)
-    
+
     # Extract class name
     class_pattern = re.compile(r'public\s+class\s+(\w+)')
     class_match = class_pattern.search(test_file_code)
     if class_match:
         context['class_name'] = class_match.group(1)
-    
+
     # Extract field declarations (class-level variables)
     field_pattern = re.compile(
         r'^\s*(private|protected|public)?\s*(?:static\s+)?(?:final\s+)?[\w<>\[\],\s]+\s+\w+\s*(?:=\s*[^;]+)?;',
@@ -717,7 +712,7 @@ def extract_test_context(test_file_code: str) -> dict:
         open_braces = code_before.count('{') - code_before.count('}')
         if open_braces == 1:  # Only at class level (after class opening brace)
             context['fields'].append(field)
-    
+
     # Extract @Before/@BeforeEach/@BeforeAll setup methods
     setup_pattern = re.compile(
         r'(@(?:Before|BeforeEach|BeforeAll|BeforeClass)\s+(?:public\s+)?(?:static\s+)?void\s+\w+\s*\([^)]*\)\s*(?:throws\s+[^{]+)?\s*\{)',
@@ -737,36 +732,36 @@ def extract_test_context(test_file_code: str) -> dict:
                     end = i + 1
                     break
         context['setup_methods'].append(test_file_code[start:end])
-    
+
     # Build context string for LLM prompt
     context_parts = []
-    
+
     # Add imports
     if context['imports']:
         context_parts.append("// Existing imports (use these in your test methods):")
         context_parts.extend(context['imports'])
         context_parts.append("")
-    
+
     # Add class info
     if context['class_name']:
         context_parts.append(f"// Test class: {context['class_name']}")
         context_parts.append("")
-    
+
     # Add fields
     if context['fields']:
         context_parts.append("// Available class fields:")
         context_parts.extend([f"    {f}" for f in context['fields']])
         context_parts.append("")
-    
+
     # Add setup methods
     if context['setup_methods']:
         context_parts.append("// Setup methods (these run before each test):")
         for method in context['setup_methods']:
             context_parts.append(f"    {method}")
         context_parts.append("")
-    
+
     context['context_string'] = '\n'.join(context_parts)
-    
+
     return context
 
 
@@ -795,14 +790,15 @@ def parse_generated_test_methods(llm_response: str) -> list:
         List of tuples: (method_name, method_code)
     """
     methods = []
-    
+
     # Pattern to find @Test methods
-    method_pattern = re.compile(r'@Test\s+(?:public\s+)?void\s+(\w+)\s*\([^)]*\)\s*(?:throws\s+[^{]+)?\s*\{', re.MULTILINE)
-    
+    method_pattern = re.compile(r'@Test\s+(?:public\s+)?void\s+(\w+)\s*\([^)]*\)\s*(?:throws\s+[^{]+)?\s*\{',
+                                re.MULTILINE)
+
     for match in method_pattern.finditer(llm_response):
         method_name = match.group(1)
         start = match.start()
-        
+
         # Find the matching closing brace
         brace_count = 0
         end = start
@@ -814,10 +810,10 @@ def parse_generated_test_methods(llm_response: str) -> list:
                 if brace_count == 0:
                     end = i + 1
                     break
-        
+
         method_code = llm_response[start:end]
         methods.append((method_name, method_code))
-    
+
     return methods
 
 
@@ -836,12 +832,12 @@ def inject_test_methods(test_file_code: str, new_methods: list, existing_names: 
     """
     if existing_names is None:
         existing_names = extract_test_method_names(test_file_code)
-    
+
     # Find the position to inject (before the last closing brace of the class)
     # We need to find the class's closing brace, not a method's
     brace_count = 0
     class_end_pos = -1
-    
+
     for i, char in enumerate(test_file_code):
         if char == '{':
             brace_count += 1
@@ -850,17 +846,17 @@ def inject_test_methods(test_file_code: str, new_methods: list, existing_names: 
             if brace_count == 0:
                 class_end_pos = i
                 break
-    
+
     if class_end_pos == -1:
         # Fallback: find the last closing brace
         class_end_pos = test_file_code.rfind('}')
-    
+
     if class_end_pos == -1:
         raise ValueError("Could not find class closing brace in test file")
-    
+
     # Build the injection string
     injection_parts = ["\n    // ===== CodaMosa-style LLM Injected Tests =====\n"]
-    
+
     used_names = set(existing_names)
     for method_name, method_code in new_methods:
         # Handle name collisions
@@ -869,7 +865,7 @@ def inject_test_methods(test_file_code: str, new_methods: list, existing_names: 
         while final_name in used_names:
             final_name = f"{method_name}_injected{suffix_counter}"
             suffix_counter += 1
-        
+
         # Replace method name in code if we had to rename
         if final_name != method_name:
             method_code = re.sub(
@@ -877,15 +873,15 @@ def inject_test_methods(test_file_code: str, new_methods: list, existing_names: 
                 rf'\g<1>{final_name}\g<2>',
                 method_code
             )
-        
+
         used_names.add(final_name)
         injection_parts.append(f"    {method_code}\n")
-    
+
     injection_string = '\n'.join(injection_parts)
-    
+
     # Insert before the closing brace
     modified_code = test_file_code[:class_end_pos] + injection_string + "\n" + test_file_code[class_end_pos:]
-    
+
     return modified_code
 
 
@@ -905,10 +901,10 @@ def get_public_method_signatures(java_code: str) -> list:
         r'(\w+)\s*'  # Method name
         r'\(([^)]*)\)'  # Parameters
     )
-    
+
     signatures = []
     for match in method_pattern.finditer(java_code):
         method_name, params = match.groups()
         signatures.append(f"{method_name}({params})")
-    
+
     return signatures

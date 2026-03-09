@@ -25,7 +25,7 @@ def get_public_method_line_ranges(java_code: str):
     return ranges
 
 class JavaCodeCoverage:
-    def __init__(self, java_files_dir, test_class, project_name, thread_id=None):
+    def __init__(self, java_files_dir: Path, test_class: str, project_name: str, thread_id: int = None):
         """
         Initializes the JavaCodeCoverage class.
 
@@ -34,14 +34,15 @@ class JavaCodeCoverage:
         :param project_name: Project name (e.g., gson).
         """
         self.logger = logging.getLogger(__name__)
-        self.java_files_dir = Path(java_files_dir)  # Path to your Java files (source + test)
+        self.java_files_dir = java_files_dir  # Path to your Java files (source + test)
         self.test_class = test_class  # Name of your test class (e.g., JsonParserTest)
         self.project_name = project_name  # Project name (e.g., gson)
-        self.classpath = Path("lib", "jars").resolve()
+        self.jars_dir = Path("lib", "jars").resolve()
         self.thread_id = thread_id
         # Collect all .jar files in the lib/jars directory to form the classpath
-        jar_files = [p for p in self.classpath.glob("*.jar")]
-        self.classpath_combined = os.pathsep.join(p.as_posix() for p in jar_files)
+        jar_files = [self.jars_dir / p.name for p in self.jars_dir.rglob("*.jar")]
+        # Classpath as OS-specific path separator–joined string
+        self.jarpaths_combined = os.pathsep.join(str(p) for p in jar_files)
 
     def compile_java_files(self, exec_dir: Path):
         """
@@ -51,11 +52,12 @@ class JavaCodeCoverage:
         :return: bool indicating success or failure of the compilation process.
         """
         cfg = get_config()
+        self.logger.debug(f"Compiling Java files: {self.java_files_dir / f'{self.test_class}Test.java'} and {self.java_files_dir / f'{self.test_class}.java'}")
         try:
             subprocess.run(
                 [
                     cfg.JAVAC_BIN,
-                    "-cp", self.classpath_combined,  # Include all jars in the classpath
+                    "-cp", self.jarpaths_combined,  # Include all jars in the classpath
                     "-d", str(exec_dir),  # Output directory for .class files
                     str(self.java_files_dir / f"{self.test_class}Test.java"),  # Test class
                     str(self.java_files_dir / f"{self.test_class}.java")
@@ -78,7 +80,7 @@ class JavaCodeCoverage:
         :param exec_dir: Directory containing the compiled .class files.
         :return: bool indicating if the tests ran successfully and generated coverage data.
         """
-        jacoco_agent = self.classpath / "jacocoagent.jar"
+        jacoco_agent = self.jars_dir / "jacocoagent.jar"
         coverage_file = exec_dir / "coverage.exec"
 
         cfg = get_config()
@@ -87,7 +89,7 @@ class JavaCodeCoverage:
                 [
                     cfg.JAVA_BIN,
                     "-javaagent:" + str(jacoco_agent) + f"=destfile={coverage_file}",  # JaCoCo agent argument
-                    "-cp", f"{str(exec_dir)}{os.pathsep}{self.classpath_combined}",
+                    "-cp", f"{str(exec_dir)}{os.pathsep}{self.jarpaths_combined}",
                     "org.junit.runner.JUnitCore",  # Run the JUnit tests
                     self.test_class + 'Test'  # The test class name
                 ],
@@ -109,18 +111,17 @@ class JavaCodeCoverage:
         :param exec_dir: Directory containing coverage.exec and .class files (and where coverage.xml is written).
         """
         cfg = get_config()
-        classfiles_dir = (exec_dir / "unit_tests" / self.project_name / self.test_class / str(self.thread_id) / "classfiles") if self.thread_id else self.java_files_dir / "classfiles"
-        sourcefiles_dir = (exec_dir / "unit_tests" / self.project_name / self.test_class / str(self.thread_id) / "javafiles") if self.thread_id else self.java_files_dir
+
         try:
             subprocess.run(
                 [
                     cfg.JAVA_BIN,
                     "-jar",
-                    str(Path("lib", "jars", "jacococli.jar").resolve()),
+                    str((self.jars_dir / "jacococli.jar").resolve()),
                     "report",
-                    str(exec_dir / "coverage.exec"),
-                    "--classfiles", str(classfiles_dir),
-                    "--sourcefiles", str(sourcefiles_dir),
+                    str((exec_dir / "coverage.exec").resolve()),
+                    "--classfiles", str(self.java_files_dir.parent / "classfiles"),
+                    "--sourcefiles", str(self.java_files_dir),
                     "--xml", str(exec_dir / "coverage.xml")
                 ],
                 check=True
@@ -187,7 +188,7 @@ class JavaCodeCoverage:
 
         return params  # return_type is ignored
 
-    def parse_jacoco_xml(self, xml_file):
+    def parse_jacoco_xml(self, xml_file: Path):
         java_source_code = (self.java_files_dir / f"{self.test_class}.java").read_text(encoding="utf-8")
         tree = ET.parse(xml_file)
         root = tree.getroot()

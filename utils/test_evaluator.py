@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import subprocess
+from pathlib import Path
 from config.config_loader import get_config
 from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.MutationScoreGenerator.PITest import PITestRunner
@@ -115,10 +116,10 @@ class TestEvaluator:
             Returns None on failure.
         """
         test_file_path = os.path.abspath(test_file_path)
-        javafiles_dir = os.path.join(work_dir, "javafiles")
-        classfiles_dir = os.path.join(work_dir, "classfiles")
-        os.makedirs(javafiles_dir, exist_ok=True)
-        os.makedirs(classfiles_dir, exist_ok=True)
+        javafiles_dir = Path(work_dir) / "javafiles"
+        classfiles_dir = Path(work_dir) / "classfiles"
+        javafiles_dir.mkdir(parents=True, exist_ok=True)
+        classfiles_dir.mkdir(parents=True, exist_ok=True)
 
         test_basename = os.path.basename(test_file_path)
         test_class_name_simple = os.path.splitext(test_basename)[0]
@@ -140,7 +141,7 @@ class TestEvaluator:
                 if os.path.exists(scaffolding):
                     shutil.copy(scaffolding, os.path.join(pkg_subdir, os.path.basename(scaffolding)))
             test_fqn = f"{test_pkg}.{test_class_name_simple}"
-            source_dir_for_jacoco = pkg_subdir
+            source_dir_for_jacoco = Path(pkg_subdir)
             test_java_in_workdir = os.path.join(pkg_subdir, test_basename)
         else:
             shutil.copy(self.source_file_path, os.path.join(javafiles_dir, f"{self.class_name}.java"))
@@ -150,7 +151,7 @@ class TestEvaluator:
                 if os.path.exists(scaffolding):
                     shutil.copy(scaffolding, os.path.join(javafiles_dir, os.path.basename(scaffolding)))
             test_fqn = test_class_name_simple
-            source_dir_for_jacoco = javafiles_dir
+            source_dir_for_jacoco = Path(javafiles_dir)
             test_java_in_workdir = os.path.join(javafiles_dir, test_basename)
 
         cp = self._build_classpath()
@@ -240,15 +241,15 @@ class TestEvaluator:
                 jars.append(self.extra_classpath)
         return os.pathsep.join(jars)
 
-    def _run_jacoco(self, source_dir, javafiles_root, classfiles_dir, test_fqn, cp):
+    def _run_jacoco(self, source_dir: Path, javafiles_root: Path, classfiles_dir: Path, test_fqn: str, cp: str):
         """
         source_dir: directory containing the actual {ClassName}.java (for parsing)
         javafiles_root: root of the java source tree (for JaCoCo sourcefiles)
         """
-        jacoco_agent = os.path.join(self.lib_jars, "jacocoagent.jar")
-        jacoco_cli = os.path.join(self.lib_jars, "jacococli.jar")
-        coverage_exec = os.path.join(classfiles_dir, "coverage.exec")
-        coverage_xml = os.path.join(classfiles_dir, "coverage.xml")
+        jacoco_agent = Path(self.lib_jars) / "jacocoagent.jar"
+        jacoco_cli = Path(self.lib_jars) / "jacococli.jar"
+        coverage_exec = classfiles_dir / "coverage.exec"
+        coverage_xml = classfiles_dir / "coverage.xml"
 
         cfg = get_config()
         try:
@@ -267,7 +268,7 @@ class TestEvaluator:
             print("[Evaluator] JaCoCo test run timed out")
             return 0.0, 0.0
 
-        if not os.path.exists(coverage_exec):
+        if not coverage_exec.exists():
             print("[Evaluator] No coverage.exec generated")
             return 0.0, 0.0
 
@@ -275,10 +276,10 @@ class TestEvaluator:
             subprocess.run(
                 [
                     cfg.JAVA_BIN, "-jar", jacoco_cli,
-                    "report", coverage_exec,
-                    "--classfiles", classfiles_dir,
-                    "--sourcefiles", javafiles_root,
-                    "--xml", coverage_xml,
+                    "report", str(coverage_exec),
+                    "--classfiles", str(classfiles_dir),
+                    "--sourcefiles", str(javafiles_root),
+                    "--xml", str(coverage_xml),
                 ],
                 check=True, capture_output=True, text=True,
             )

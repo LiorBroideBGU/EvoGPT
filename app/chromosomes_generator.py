@@ -35,35 +35,25 @@ class ChromosomesGenerator:
         for attempt in range(1, max_retries + 1):
             try:
                 self.logger.debug(f"Thread-{thread_number} starting (attempt {attempt}/{max_retries}) with temperature={temperature}")
-
                 cfg = get_config()
                 unit_test_generator = UnitTestGenerator(api_key=cfg.API_KEY, model=cfg.MODEL, temperature=temperature)
-                project_id = self.project_name
-
                 # Generation + Repair loop (initial)
-                await unit_test_generator.generation_repair_loop(java_file_path=self.source_code_path, project_id=project_id,
-                                                           thread_number=thread_number, output_path=output_path)
+                generated_running_test = await unit_test_generator.generation_repair_loop(
+                    java_file_path=self.source_code_path, project_id=self.project_name, thread_number=thread_number, output_path=output_path)
 
-                # Verify the test compiles before proceeding to coverage
+                if not generated_running_test:
+                    raise RuntimeError("Failed to generate a valid test after repair loop.")
+
+                # Coverage
+                self.logger.debug(f"Successfully generated a test for Thread-{thread_number}, verifying code coverage...")
                 results_base = output_path / 'unit_tests' / self.project_name / self.class_name / str(thread_number)
                 javafiles_dir = results_base / 'javafiles'
                 classfiles_dir = results_base / 'classfiles'
-
-                test_file = javafiles_dir / f'{self.class_name}Test.java'
-                executor = JavaExecutor(test_file)
-                compiled, compile_err = executor.compile_java()
-                if not compiled:
-                    raise RuntimeError(f"Test failed to compile after repair loop: {compile_err[:300]}")
-
-                ran, run_err = executor.run_java()
-                if not ran:
-                    raise RuntimeError(f"Test failed to run after repair loop: {run_err[:300]}")
-
-                # Coverage
-                jcc = JavaCodeCoverage(javafiles_dir=javafiles_dir, test_class=self.class_name, project_name=self.project_name, thread_id=thread_number)
+                jcc = JavaCodeCoverage(java_files_dir=javafiles_dir, test_class=self.class_name, project_name=self.project_name, thread_id=thread_number)
                 coverage_ok = jcc.generate_coverage_report(output_path=output_path)
                 coverage_xml_path = classfiles_dir / 'coverage.xml'
 
+                generated_test_path = javafiles_dir / f'{self.class_name}Test.java'
                 if coverage_ok and coverage_xml_path.exists():
                     coverage_metrics, missed_branches = jcc.parse_jacoco_xml(coverage_xml_path)
 
@@ -72,23 +62,18 @@ class ChromosomesGenerator:
                         api_key=cfg.API_KEY, model=cfg.MODEL, temperature=temperature, java_file_path=self.source_code_path)
                     await test_enhancements.generation_repair_loop(coverage_metrics, missed_branches, thread_number=thread_number, output_path=output_path)
 
-                    first_unit_test = read_java_file_as_string(
-                        javafiles_dir / f'{self.class_name}Test.java')
-                    enhanced_unit_test = read_java_file_as_string(
-                        javafiles_dir / f'{self.class_name}EnhancedTest.java')
+                    first_unit_test = read_java_file_as_string(generated_test_path)
+                    enhanced_unit_test = read_java_file_as_string(javafiles_dir / f'{self.class_name}EnhancedTest.java')
                     final_unit_test = merge_java_unit_tests(first_unit_test, enhanced_unit_test, f'{self.class_name}Test')
                 else:
                     self.logger.debug(f"Thread-{thread_number} coverage report failed; skipping enhancement, using base test")
-                    final_unit_test = read_java_file_as_string(
-                        javafiles_dir / f'{self.class_name}Test.java'
-                    )
+                    final_unit_test = read_java_file_as_string(generated_test_path)
 
                 # Cleanup
-                delete_paths([javafiles_dir / f'{self.class_name}Test.java', javafiles_dir / f'{self.class_name}EnhancedTest.java', classfiles_dir])
+                delete_paths([generated_test_path, javafiles_dir / f'{self.class_name}EnhancedTest.java', classfiles_dir])
 
                 # Save final merged test
-                merged_path = javafiles_dir / f'{self.class_name}Test.java'
-                save_test_suite(final_unit_test, merged_path)
+                save_code(final_unit_test, generated_test_path)
                 chromosome_path = javafiles_dir
                 with self.lock:
                     chromosome = Chromosome(path=chromosome_path, thread_id=thread_number)
@@ -97,7 +82,7 @@ class ChromosomesGenerator:
                 with self.lock:
                     self.chromosomes.append(chromosome)
                 
-                self.logger.debug(f"Agent-{thread_number} done, saved final test at: {merged_path}")
+                self.logger.debug(f"Agent-{thread_number} done, saved final test at: {generated_test_path}")
                 return
 
             except Exception as e:
@@ -129,16 +114,16 @@ class ChromosomesGenerator:
 
     def save_chromosome_code(self, iteration: int, offspring1_code: str, offspring2_code: str, results_dir: str):
         base_path = Path(results_dir) / "unit_tests" / self.project_name / self.class_name / "offsprings" / str(iteration)
-        save_test_suite(offspring1_code,
-                        base_path / "offspring1" / "javafiles" / f"{self.class_name}Test.java")
-        save_test_suite(self.source_code_string,
-                        base_path / "offspring1" / "javafiles" / f"{self.class_name}.java")
+        save_code(offspring1_code,
+                  base_path / "offspring1" / "javafiles" / f"{self.class_name}Test.java")
+        save_code(self.source_code_string,
+                  base_path / "offspring1" / "javafiles" / f"{self.class_name}.java")
         compile_code_from_path(base_path / "offspring1" / "javafiles" / f"{self.class_name}.java")
         compile_code_from_path(base_path / "offspring1" / "javafiles" / f"{self.class_name}Test.java")
-        save_test_suite(offspring2_code,
-                        base_path / "offspring2" / "javafiles" / f"{self.class_name}Test.java")
-        save_test_suite(self.source_code_string,
-                        base_path / "offspring2" / "javafiles" / f"{self.class_name}.java")
+        save_code(offspring2_code,
+                  base_path / "offspring2" / "javafiles" / f"{self.class_name}Test.java")
+        save_code(self.source_code_string,
+                  base_path / "offspring2" / "javafiles" / f"{self.class_name}.java")
         compile_code_from_path(base_path / "offspring2" / "javafiles" / f"{self.class_name}.java")
         compile_code_from_path(base_path / "offspring2" / "javafiles" / f"{self.class_name}Test.java")
 
@@ -149,7 +134,7 @@ class ChromosomesGenerator:
         for chromosome in self.chromosomes:
             chromosome.compute_fitness()
 
-    async def _inject_llm_tests(self, best_chromosome, output_path: Path):
+    async def _inject_llm_tests(self, best_chromosome: Chromosome, output_path: Path):
         """
         CodaMosa-style LLM injection: Generate targeted test methods and inject them
         into the best chromosome's test suite to escape coverage plateaus.
@@ -165,21 +150,21 @@ class ChromosomesGenerator:
         # Get coverage gaps from the best chromosome
         # We need to regenerate coverage report to get missed branches
         jcc = JavaCodeCoverage(
-            os.path.dirname(best_chromosome.test_file_path),
+            best_chromosome.test_file_path.parent,
             self.class_name,
             self.project_name,
             thread_id=best_chromosome.thread_id
         )
         
         # Parse coverage to get missed branches
-        classfiles_dir = os.path.join(os.path.dirname(best_chromosome.path), "classfiles")
-        coverage_xml_path = os.path.join(classfiles_dir, 'coverage.xml')
+        coverage_xml_path = best_chromosome.path.parent / "classfiles" / 'coverage.xml'
         
         # Check if coverage.xml exists, if not regenerate
-        if not os.path.exists(coverage_xml_path):
-            jcc.generate_coverage_report()
+        if not coverage_xml_path.exists():
+            jcc.generate_coverage_report(output_path=output_path)
         
-        coverage_metrics, missed_branches = jcc.parse_jacoco_xml(coverage_xml_path)
+        coverage_metrics, missed_branches = jcc.parse_jacoco_xml(xml_file=coverage_xml_path)
+        self.logger.debug(f"Coverage metrics: {coverage_metrics}")
         
         # Format missed branches as string for the LLM
         missed_branches_str = "\n".join([
@@ -222,7 +207,7 @@ class ChromosomesGenerator:
         modified_code = inject_test_methods(test_file_code, unique_methods, existing_names)
         
         # Save the modified test file
-        save_test_suite(modified_code, best_chromosome.test_file_path)
+        save_code(modified_code, best_chromosome.test_file_path)
         
         # Recompile the test file
         executor = JavaExecutor(best_chromosome.test_file_path)
@@ -233,13 +218,13 @@ class ChromosomesGenerator:
             # Try to fix by removing failing tests
             current_code = read_java_file_as_string(best_chromosome.test_file_path)
             fixed_code = remove_junit_tests(current_code, output)
-            save_test_suite(fixed_code, best_chromosome.test_file_path)
+            save_code(fixed_code, best_chromosome.test_file_path)
             
             # Try compiling again
             success, output = executor.compile_java()
             if not success:
                 self.logger.error(f"Could not fix compilation errors. Reverting to original.")
-                save_test_suite(test_file_code, best_chromosome.test_file_path)
+                save_code(test_file_code, best_chromosome.test_file_path)
                 return
         
         # Recompute fitness for the modified chromosome
@@ -476,8 +461,8 @@ class ChromosomesGenerator:
         temp_source_backup = temp_backup_dir / f"{self.class_name}.java"
         
         # Save to temporary backup
-        save_test_suite(best_test_content, temp_test_backup)
-        save_test_suite(source_code_content, temp_source_backup)
+        save_code(best_test_content, temp_test_backup)
+        save_code(source_code_content, temp_source_backup)
         
         self.logger.debug(f"Saving best test suite and cleaning up...")
         

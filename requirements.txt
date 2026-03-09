@@ -20,3 +20,4 @@ typing-extensions==4.12.2
 
 # Comparison script dependencies
 matplotlib
+python-dotenv==1.2.2

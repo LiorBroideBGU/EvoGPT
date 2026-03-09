@@ -68,7 +68,7 @@ class Chromosome:
             success, output = executor.run_java()
             if not success:
                 current_test_suite = remove_junit_tests(current_test_suite, output)
-                save_test_suite(current_test_suite, self.test_file_path)
+                save_code(current_test_suite, self.test_file_path)
             else:
                 break
 
