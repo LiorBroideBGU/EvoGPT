@@ -130,7 +130,7 @@ class JavaCodeCoverage:
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Error converting .exec to .xml: {str(e)}")
 
-    def generate_coverage_report(self, output_path: Path):
+    def generate_coverage_report(self, output_path: Path) -> bool:
         """
         Generates the coverage report by compiling, running tests with JaCoCo,
         and converting the .exec file to an XML report.

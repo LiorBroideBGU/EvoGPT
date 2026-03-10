@@ -1,18 +1,29 @@
-from langchain_openai import ChatOpenAI
-from llm_agents.chat_message_history import ChatMessageHistory
-from langchain_core.messages import SystemMessage
-from langchain_ollama import ChatOllama
 import logging
+import os
+
+import httpx
+from dotenv import load_dotenv
+from langchain_core.messages import SystemMessage
+from openai import AsyncOpenAI
+
+from llm_agents.chat_message_history import ChatMessageHistory
+
+# Load environment variables from the .env file (if present)
+load_dotenv()
 
 
 class LLMAgent:
-    def __init__(self, api_key: str, model: str, temperature: float, is_local: bool = False):
+    def __init__(self, api_key: str, model: str, temperature: float, is_local: bool = True):
         self.logger = logging.getLogger(__name__)
         self.chat_store = {}
+        self.model = model
+        self.temperature = temperature
         self.long_term_memory = {}
-        self.chat_model = ChatOllama(model=model, temperature=temperature, max_retries=20) if is_local else \
-            ChatOpenAI(api_key=api_key, model=model, temperature=temperature, max_retries=20)
-        
+        self.chat_model = AsyncOpenAI(base_url=os.environ["LLM_HOST"],
+                                      api_key="not-needed",
+                                      http_client=httpx.AsyncClient(verify=False)) if is_local else AsyncOpenAI(api_key=api_key)
+        self.logger.debug(f"Initialized the LLM agent")
+
     def get_chat_history(self, session_id: str) -> ChatMessageHistory:
         """
         Retrieve or create chat history for the session

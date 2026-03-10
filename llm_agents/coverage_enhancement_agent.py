@@ -14,7 +14,25 @@ class CoverageEnhancementAgent(UnitTestGenerator):
         super().__init__(api_key, model, temperature)
         self.java_file_path = java_file_path
 
-    async def generation_repair_loop(self, coverage_metrics: dict, missed_branches: list, iterations: int = 4,
+    @staticmethod
+    def _need_enhancement(coverage_metrics: dict, missed_branches: dict) -> bool:
+        """
+        Determines if enhancement is needed based on coverage metrics and missed branches.
+        :param coverage_metrics: The coverage metrics
+        :param missed_branches: The missed branches
+        :return: True if enhancement is needed, False otherwise
+        """
+        tested_class_path = list(coverage_metrics.keys())[0]
+        for method, metrics in coverage_metrics[tested_class_path].items():
+            if metrics.get("branch_coverage", 100) < 75 or metrics.get("line_coverage", 100) < 75:
+                return True
+
+        if missed_branches:
+            return True
+
+        return False
+
+    async def generation_repair_loop(self, coverage_metrics: dict, missed_branches: dict, iterations: int = 4,
                                      thread_number: int = None, output_path: Path = Path.cwd()):
         """
         Generates a coverage enhancement for the given class.
@@ -25,6 +43,10 @@ class CoverageEnhancementAgent(UnitTestGenerator):
         :param output_path: The output path for the generated test
         :return: The coverage enhancement
         """
+        if not self._need_enhancement(coverage_metrics, missed_branches):
+            self.logger.debug("No enhancement needed based on coverage metrics and missed branches.")
+            return False
+
         java_code = self._read_and_clean_java_code(self.java_file_path)
         project_root = extract_project_name(self.java_file_path)
         self.update_long_term_memory(self.session_id, INPUT_PROMPT.format(java_code, coverage_metrics, missed_branches))

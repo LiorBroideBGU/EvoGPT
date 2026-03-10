@@ -53,7 +53,7 @@ def get_class_imports(source_folder: Path, stacktrace: str):
     }
 
     pattern = r"error:\s*package\s+(\S+)\s+does\s+not\s+exist"
-    pattern_missing_imports = r"symbol:\s+variable\s+(\w+)"
+    pattern_missing_imports = r"symbol:\s+(?:variable|class)\s+(\w+)"
     missing_classes = re.findall(pattern_missing_imports, stacktrace)
     missing_classes = list(set(missing_classes))
     class_names = re.findall(pattern, stacktrace)
@@ -494,7 +494,7 @@ def delete_paths(paths_to_delete: list[Path]) -> bool:
     try:
         for path in paths_to_delete:
             if path.is_file():
-                path.unlink()
+                path.unlink(missing_ok=True)
 
             elif path.is_dir():
                 shutil.rmtree(path)
