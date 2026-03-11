@@ -1,7 +1,4 @@
-from numpy.lib.utils import source
-
 from llm_agents.llm_agent import LLMAgent
-from langchain_core.messages import SystemMessage
 from utils.function_utils import *
 from utils.java_executor import *
 import random
@@ -81,19 +78,19 @@ class MutationAssertionGenerator(LLMAgent):
         long_term_memory = self.get_long_term_memory('session1')
 
         # Compose the prompt including the system message, long-term memory, and user input
-        system_message = SystemMessage(content=f"{SYSTEM_PROMPT}")
+        system_message = {"role": "system", "content": SYSTEM_PROMPT}
 
         # Get or create the message history for the session
         history = self.get_chat_history('session1')
 
         # Add system message and user prompt to the conversation
         messages = [system_message] + history.messages
-        response =  self.chat_model(messages)
+        content = await self.invoke(messages)
 
         # Update the session chat history and long-term memory
-        await history.add_assistant_message(response.content)
+        await history.add_assistant_message(content)
 
-        return response.content
+        return content
 
     def replace_test_method(self,original_code: str, new_method_code: str) -> str:    # Extract method name from new method
         """

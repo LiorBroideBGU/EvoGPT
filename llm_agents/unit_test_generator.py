@@ -1,10 +1,6 @@
 from llm_agents.llm_agent import LLMAgent
-from langchain_core.messages import SystemMessage
-from utils.function_utils import *
-from utils.java_executor import *
-from utils.dataset_utils import *
-from pathlib import Path
 from prompts.unit_test_generator_prompts import *
+from utils.dataset_utils import *
 from utils.java_executor import JavaExecutor
 
 NUM_FAILING_TESTS = 6
@@ -29,6 +25,7 @@ class UnitTestGenerator(LLMAgent):
         super().__init__(api_key, model, temperature)
         self.system_prompt = SYSTEM_PROMPT_MAP[temperature]
 
+
     async def get_unit_test_for_class(self, session_id: str) -> str:
         """
         Gets a unit test for the given class.
@@ -36,12 +33,13 @@ class UnitTestGenerator(LLMAgent):
         :return: The unit test
         """
         self.logger.debug(f"Getting unit test for class: {session_id}")
-        system_message = SystemMessage(content=f"{self.system_prompt}")
+        system_message = {"role": "system", "content": self.system_prompt}
         history = self.get_chat_history(session_id)
         messages = [system_message] + history.messages
-        response = await self.chat_model.ainvoke(messages)
-        await history.add_assistant_message(response.content)
-        return response.content
+        content = await self.invoke(messages)
+        await history.add_assistant_message(content)
+        test = content.replace("```java", "").replace("```", "")
+        return test
 
     @staticmethod
     def _read_and_clean_java_code(java_file_path: Path) -> str:
@@ -98,6 +96,10 @@ class UnitTestGenerator(LLMAgent):
         self.update_long_term_memory(self.session_id, REPAIR_PROMPT.format(run_err))
         fixed_unit_test = await self.get_unit_test_for_class(session_id=self.session_id)
         save_code(fixed_unit_test, test_file_path)
+        executed_successfully, run_err = executor.run_java()
+        if executed_successfully:
+            return executed_successfully
+
         return False
 
     async def _check_syntax_and_fix(self, executor: JavaExecutor, current_test_suite: str, test_file_path: Path) -> str:
@@ -128,7 +130,7 @@ class UnitTestGenerator(LLMAgent):
         repaired_test_suite = current_test_suite
         compiled_successfully, compilation_err = executor.compile_java()
         if compiled_successfully:
-            return compiled_successfully
+            return compiled_successfully, current_test_suite
 
         self.logger.debug(f"Performing test fix heuristic to fix possibly missing imports.")
         unimport_classes = get_class_imports(extract_project_name(java_file_path), compilation_err)
@@ -147,8 +149,8 @@ class UnitTestGenerator(LLMAgent):
 
         return compiled_successfully, repaired_test_suite
 
-    def _remove_failing_tests_one_by_one(self, executor: JavaExecutor, current_test_suite: str,
-                                         test_file_path: Path) -> bool:
+    @staticmethod
+    def _remove_failing_tests_one_by_one(executor: JavaExecutor, current_test_suite: str, test_file_path: Path) -> bool:
         """
         Removes failing tests one by one as a fallback mechanism.
         :param executor: The JavaExecutor instance

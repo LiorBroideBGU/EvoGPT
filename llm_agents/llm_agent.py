@@ -1,10 +1,8 @@
 import logging
 import os
 
-import httpx
 from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage
-from openai import AsyncOpenAI
+from ollama import AsyncClient
 
 from llm_agents.chat_message_history import ChatMessageHistory
 
@@ -13,15 +11,13 @@ load_dotenv()
 
 
 class LLMAgent:
-    def __init__(self, api_key: str, model: str, temperature: float, is_local: bool = True):
+    def __init__(self, api_key: str, model: str, temperature: float):
         self.logger = logging.getLogger(__name__)
         self.chat_store = {}
         self.model = model
         self.temperature = temperature
         self.long_term_memory = {}
-        self.chat_model = AsyncOpenAI(base_url=os.environ["LLM_HOST"],
-                                      api_key="not-needed",
-                                      http_client=httpx.AsyncClient(verify=False)) if is_local else AsyncOpenAI(api_key=api_key)
+        self.chat_model = AsyncClient(host=os.environ["LLM_HOST"], verify=False)
         self.logger.debug(f"Initialized the LLM agent")
 
     def get_chat_history(self, session_id: str) -> ChatMessageHistory:
@@ -55,4 +51,16 @@ class LLMAgent:
         return ". ".join(self.long_term_memory.get(session_id, []))
 
     async def edit_history_response(self, session_id: str, fixed_response: str):
-        self.chat_store[session_id].messages[1] = SystemMessage(content=fixed_response)
+        self.chat_store[session_id].messages[1] = {"role": "assistant", "content": fixed_response}
+
+    async def invoke(self, messages: list[dict[str, str]], temperature: float | None = None) -> str:
+        """
+        Invokes the LLM model with the given messages and temperature.
+        :param messages: The messages to invoke the model with
+        :param temperature: The temperature to use
+        :return: The response from the model
+        """
+        response = await self.chat_model.chat(model=self.model, messages=messages,
+                                              options={"temperature": temperature or self.temperature})
+        response_dict = response.model_dump()
+        return response_dict["message"]["content"]

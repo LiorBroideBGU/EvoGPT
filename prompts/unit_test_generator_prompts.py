@@ -8,13 +8,6 @@ Methods to test: {}
 {}
 </SourceCode>
 
-<Constraint>
-- Output ONLY the raw Java code. 
-- Do not use markdown backticks (```).
-- Do not include any introductory or concluding text.
-- The first line of the output must be the package declaration.
-</Constraint>
-
 Response:"""
 
 REPAIR_PROMPT = """
@@ -25,15 +18,7 @@ REPAIR_PROMPT = """
 <Instruction>
 The previous test execution failed. Rewrite the entire Java file to resolve the error above. 
 Ensure all imports and the package declaration remain intact. 
-Output ONLY the raw Java code. No prose. No markdown.
 </Instruction>
-
-<Constraint>
-- Output ONLY the raw Java code. 
-- Do not use markdown backticks (```).
-- Do not include any introductory or concluding text.
-- Start your response immediately with the 'package' keyword.
-</Constraint>
 
 Response:"""
 
@@ -44,15 +29,7 @@ SYNTAX_ERROR_PROMPT = """
 
 <Instruction>
 The generated code contains syntax errors. Rewrite the file to ensure it is valid Java code.
-Output ONLY raw code. No explanations. No markdown.
 </Instruction>
-
-<Constraint>
-- Output ONLY the raw Java code. 
-- Do not use markdown backticks (```).
-- Do not include any introductory or concluding text.
-- Start your response immediately with the 'package' keyword.
-</Constraint>
 
 Response:"""
 
@@ -61,7 +38,8 @@ You are a specialized Java Test Generator.
 Your output must be 100% valid Java code.
 - No Markdown (No ```).
 - No Explanations/Prose/Notes.
-- Output MUST start with the 'package' declaration.
+- Output MUST start with the 'package' declaration -- this is the first line of the text. Use the same package declaration as in the source code.
+- Your imports must include an import of the class under test.
 - Use JUnit 4.13.2.
 - All helper methods or internal classes MUST be declared as 'static'.
 - There should be a single class in the output, named <ClassName>Test, where <ClassName> is the name of the class being tested.
@@ -77,7 +55,8 @@ You are a specialized Java Test Generator.
 Your output must be 100% valid Java code.
 - No Markdown (No ```).
 - No Explanations/Prose/Notes.
-- Output MUST start with the 'package' declaration.
+- Output MUST start with the 'package' declaration -- this is the first line of the text. Use the same package declaration as in the source code.
+- Your imports must include an import of the class under test.
 - Use JUnit 4.13.2.
 - All helper methods or internal classes MUST be declared as 'static'.
 - There should be a single class in the output, named <ClassName>Test, where <ClassName> is the name of the class being tested.
@@ -92,7 +71,8 @@ You are a specialized Java Test Generator.
 Your output must be 100% valid Java code.
 - No Markdown (No ```).
 - No Explanations/Prose/Notes.
-- Output MUST start with the 'package' declaration.
+- Output MUST start with the 'package' declaration -- this is the first line of the text. Use the same package declaration as in the source code.
+- Your imports must include an import of the class under test.
 - Use JUnit 4.13.2.
 - All helper methods or internal classes MUST be declared as 'static'.
 - There should be a single class in the output, named <ClassName>Test, where <ClassName> is the name of the class being tested.
@@ -107,7 +87,8 @@ You are a specialized Java Test Generator.
 Your output must be 100% valid Java code.
 - No Markdown (No ```).
 - No Explanations/Prose/Notes.
-- Output MUST start with the 'package' declaration.
+- Output MUST start with the 'package' declaration -- this is the first line of the text. Use the same package declaration as in the source code.
+- Your imports must include an import of the class under test.
 - Use JUnit 4.13.2.
 - All helper methods or internal classes MUST be declared as 'static'.
 - There should be a single class in the output, named <ClassName>Test, where <ClassName> is the name of the class being tested.
@@ -121,7 +102,8 @@ SYSTEM_PROMPT_DEFAULT = r"""You are a specialized Java Test Generator.
 Your output must be 100% valid Java test code.
 - No Markdown (No ```).
 - No Explanations/Prose/Notes.
-- Output MUST start with the 'package' declaration.
+- Output MUST start with the 'package' declaration -- this is the first line of the text. Use the same package declaration as in the source code.
+- Your imports must include an import of the class under test.
 - Use JUnit 4.13.2.
 - All helper methods or internal classes MUST be declared as 'static'.
 - There should be a single class in the output, named <ClassName>Test, where <ClassName> is the name of the class being tested.

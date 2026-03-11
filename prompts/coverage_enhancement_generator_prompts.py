@@ -16,12 +16,5 @@ These lines contain uncovered conditional logic:
 {}
 </Instruction>
 
-<Constraint>
-- Output ONLY the raw Java code. 
-- Do not use markdown backticks (```).
-- Do not include any introductory or concluding text.
-- Start your response immediately with the 'package' keyword.
-</Constraint>
-
 Response:
 """

@@ -20,7 +20,6 @@ class JavaExecutor:
         self.java_file_name = self.java_file_path.stem
         self.output_dir = self.java_file_path.parent.parent / "classfiles"
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.compiled = False
 
     def check_java_code_syntax(self):
         """
@@ -54,7 +53,6 @@ class JavaExecutor:
             if result.returncode != 0:
                 return False, result.stderr
 
-            self.compiled = True
             return True, 'Compilation successful'
 
         except Exception as e:
@@ -67,10 +65,9 @@ class JavaExecutor:
         """
         cfg = get_config()
         try:
-            if not self.compiled:
-                compilation_successful, error = self.compile_java()
-                if not compilation_successful:
-                    return False, f"Compilation failed:\n{error}"
+            compilation_successful, error = self.compile_java()
+            if not compilation_successful:
+                return False, f"Compilation failed:\n{error}"
 
             # Run the compiled tests
             result = subprocess.run(

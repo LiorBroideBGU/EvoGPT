@@ -8,26 +8,26 @@ LLM configurations and injects them into the best chromosome's test suite.
 
 import asyncio
 import logging
-from typing import List, Tuple, Dict, Optional
 from pathlib import Path
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
+from typing import List, Tuple
+
+from openai import AsyncOpenAI
+
 from config.config_loader import get_config
+from llm_agents.llm_agent import LLMAgent
+from prompts.plateau_escape_prompts import *
+from prompts.unit_test_generator_prompts import (
+    SYSTEM_PROMPT_ASSERTION_HEAVY,
+    SYSTEM_PROMPT_BUG_DETECTOR,
+    SYSTEM_PROMPT_EDGE_CASE_EXPLORER,
+    SYSTEM_PROMPT_HIGH_COVERAGE,
+    SYSTEM_PROMPT_DEFAULT
+)
 from utils.function_utils import (
     extract_test_context,
     parse_generated_test_methods,
     read_java_file_as_string
 )
-from prompts.plateau_escape_prompts import *
-from prompts.unit_test_generator_prompts import (
-    SYSTEM_PROMPT_ASSERTION_HEAVY, 
-    SYSTEM_PROMPT_BUG_DETECTOR, 
-    SYSTEM_PROMPT_EDGE_CASE_EXPLORER, 
-    SYSTEM_PROMPT_HIGH_COVERAGE, 
-    SYSTEM_PROMPT_DEFAULT
-    )
-
-
 
 # Strategy configurations: (prompt_file_suffix, temperature)
 # These mirror the diverse prompts used in initial test generation
@@ -61,7 +61,7 @@ def get_all_injection_strategies() -> List[Tuple[str, float]]:
     return INJECTION_STRATEGIES.copy()
 
 
-class PlateauEscapeAgent:
+class PlateauEscapeAgent(LLMAgent):
     """
     Agent for generating targeted test methods when evolutionary search stagnates.
     
@@ -71,7 +71,7 @@ class PlateauEscapeAgent:
     3. Generated test methods are injected into the existing test suite
     """
     
-    def __init__(self, api_key: str = None, model: str = None):
+    def __init__(self, api_key: str = None, model: str = None, temperature: float = 0.5):
         """
         Initialize the PlateauEscapeAgent.
         
@@ -79,12 +79,14 @@ class PlateauEscapeAgent:
             api_key: OpenAI API key (defaults to config.API_KEY)
             model: LLM model name (defaults to config.MODEL)
         """
+        super().__init__(api_key, model, temperature)
         self.logger = logging.getLogger(__name__)
         cfg = get_config()
         self.api_key = api_key or cfg.API_KEY
         self.model = model or cfg.MODEL
-        
-    def _get_combined_system_prompt(self, strategy_name: str) -> str:
+
+    @staticmethod
+    def _get_combined_system_prompt(strategy_name: str) -> str:
         """
         Combine the strategy-specific prompt with injection-specific instructions.
         
@@ -137,14 +139,6 @@ class PlateauEscapeAgent:
             List of (method_name, method_code) tuples
         """
         try:
-            # Create LLM with specific temperature
-            llm = ChatOpenAI(
-                api_key=self.api_key,
-                model=self.model,
-                temperature=temperature,
-                max_retries=10
-            )
-            
             # Get the strategy-specific system prompt combined with injection context
             system_prompt = self._get_combined_system_prompt(strategy_name)
             
@@ -162,15 +156,14 @@ class PlateauEscapeAgent:
             
             # Create messages with strategy-specific system prompt
             messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=input_prompt)
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": input_prompt},
             ]
-            
+
             # Invoke LLM
-            response = await llm.ainvoke(messages)
-            
+            content = await self.invoke(messages=messages, temperature=temperature)
             # Parse generated methods
-            methods = parse_generated_test_methods(response.content)
+            methods = parse_generated_test_methods(content)
             
             self.logger.debug(f"Strategy '{strategy_name}' (temp={temperature}): Generated {len(methods)} methods")
             return methods
