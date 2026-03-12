@@ -43,6 +43,26 @@ class JavaCodeCoverage:
         jar_files = [self.jars_dir / p.name for p in self.jars_dir.rglob("*.jar")]
         # Classpath as OS-specific path separator–joined string
         self.jarpaths_combined = os.pathsep.join(str(p) for p in jar_files)
+        with (self.java_files_dir / f"{self.test_class}Test.java").open("r", encoding="utf-8") as file:
+            self.java_code = file.read()
+
+
+    def get_fully_qualified_class_name(self) -> str:
+        """
+        Returns the fully qualified class name for the Java test class.
+        If the source file declares a package, the package name is prefixed.
+        Otherwise, the simple class name (file stem) is returned.
+        """
+        try:
+            tree = javalang.parse.parse(self.java_code)
+            package_name = getattr(getattr(tree, "package", None), "name", None)
+            if package_name:
+                return f"{package_name}.{self.test_class}Test"
+        except Exception:
+            # Fall back to simple class name if parsing fails for any reason
+            pass
+
+        return f"{self.test_class}Test"
 
     def compile_java_files(self, exec_dir: Path):
         """
@@ -84,6 +104,7 @@ class JavaCodeCoverage:
         coverage_file = exec_dir / "coverage.exec"
 
         cfg = get_config()
+        fully_qualified_name = self.get_fully_qualified_class_name()
         try:
             result = subprocess.run(
                 [
@@ -91,7 +112,7 @@ class JavaCodeCoverage:
                     "-javaagent:" + str(jacoco_agent) + f"=destfile={coverage_file}",  # JaCoCo agent argument
                     "-cp", f"{str(exec_dir)}{os.pathsep}{self.jarpaths_combined}",
                     "org.junit.runner.JUnitCore",  # Run the JUnit tests
-                    self.test_class + 'Test'  # The test class name
+                    fully_qualified_name  # The test class name
                 ],
                 check=True,
                 capture_output=True,

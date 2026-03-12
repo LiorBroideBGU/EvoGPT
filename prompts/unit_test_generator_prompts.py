@@ -16,8 +16,7 @@ REPAIR_PROMPT = """
 </ErrorLog>
 
 <Instruction>
-The previous test execution failed. Rewrite the entire Java file to resolve the error above. 
-Ensure all imports and the package declaration remain intact. 
+The previous test execution failed. Modify the test code of the failing tests to resolve the error above. 
 </Instruction>
 
 Response:"""
@@ -28,7 +27,8 @@ SYNTAX_ERROR_PROMPT = """
 </SyntaxError>
 
 <Instruction>
-The generated code contains syntax errors. Rewrite the file to ensure it is valid Java code.
+The generated code contains syntax errors. Make sure the code is valid syntactically according to Java coding standards.
+Change the minimum necessary lines of code needed to fix the error.
 </Instruction>
 
 Response:"""
