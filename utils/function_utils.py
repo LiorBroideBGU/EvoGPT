@@ -5,7 +5,6 @@ import os
 import re
 import javalang
 import shutil
-from utils.java_executor import JavaExecutor
 
 
 def unzip_dataset(dataset_name: str, target_path: Path, dataset_path: Path):
@@ -233,6 +232,52 @@ def read_java_file_as_string(java_file_path):
         print(f"File not found: {java_file_path}")
     except Exception as e:
         print(f"An error occurred: {e}")
+
+
+def detect_package_from_file(java_file: str | Path) -> str | None:
+    """
+    Detects the Java package declaration from a source file.
+    Tries AST parsing first and falls back to a regex-based scan.
+    """
+    path = Path(java_file)
+    try:
+        code = path.read_text(encoding="utf-8")
+    except Exception:
+        return None
+
+    # First try AST-based detection
+    try:
+        tree = javalang.parse.parse(code)
+        package_node = getattr(tree, "package", None)
+        if package_node and getattr(package_node, "name", None):
+            return package_node.name
+    except Exception:
+        pass
+
+    # Fallback: simple regex scan over the file text
+    for line in code.splitlines():
+        match = re.match(r'^\s*package\s+([\w.]+)\s*;', line)
+        if match:
+            return match.group(1)
+
+    return None
+
+
+def fully_qualified_class_name_from_source(java_code: str, class_name: str) -> str:
+    """
+    Returns the fully qualified class name for a Java type based on its source.
+    If the source declares a package, it is prefixed, otherwise the simple name is returned.
+    """
+    try:
+        tree = javalang.parse.parse(java_code)
+        package_node = getattr(tree, "package", None)
+        package_name = getattr(package_node, "name", None) if package_node else None
+    except Exception:
+        package_name = None
+
+    if package_name:
+        return f"{package_name}.{class_name}"
+    return class_name
 
 
 def save_code(code_content: str, dest_path: Path | str):
@@ -645,6 +690,8 @@ def compile_code_from_path(code):
     :param code: Path to the java source code.
     :return:
     """
+    from utils.java_executor import JavaExecutor
+
     executor = JavaExecutor(code)
     executor.compile_java()
 

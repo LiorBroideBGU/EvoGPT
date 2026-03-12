@@ -3,24 +3,15 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import List
+
+import logging
+
 from config.config_loader import get_config
 from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.MutationScoreGenerator.PITest import PITestRunner
 from app.chromosome import extract_package_from_path
-from typing import List
-import logging
-
-def _detect_package(java_file):
-    """Read a Java file and extract its package declaration."""
-    try:
-        with open(java_file, 'r') as f:
-            for line in f:
-                m = re.match(r'^\s*package\s+([\w.]+)\s*;', line)
-                if m:
-                    return m.group(1)
-    except Exception:
-        pass
-    return None
+from utils.function_utils import detect_package_from_file
 
 
 def _find_failing_tests(junit_output):
@@ -123,7 +114,7 @@ class TestEvaluator:
         classfiles_dir.mkdir(parents=True, exist_ok=True)
 
         test_basename = test_file_path.name
-        test_pkg = _detect_package(test_file_path)
+        test_pkg = detect_package_from_file(test_file_path)
 
         # Only copy scaffolding if the test still references it
         with open(test_file_path, 'r') as f:

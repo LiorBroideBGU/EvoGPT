@@ -11,8 +11,6 @@ import logging
 from pathlib import Path
 from typing import List, Tuple
 
-from openai import AsyncOpenAI
-
 from config.config_loader import get_config
 from llm_agents.llm_agent import LLMAgent
 from prompts.plateau_escape_prompts import *

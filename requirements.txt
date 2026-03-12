@@ -17,3 +17,5 @@ python-dotenv==1.2.2
 ollama==0.6.1
 openai==2.26.0
 typing==3.7.4.3
+
+scipy==1.15.3

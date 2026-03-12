@@ -5,6 +5,9 @@ import random
 from config.config_loader import get_config
 from pathlib import Path
 
+from utils.java_executor import JavaExecutor
+
+
 def extract_package_from_path(java_file_path):
     """
     Extract package name from a Java file path.

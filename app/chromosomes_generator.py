@@ -12,6 +12,7 @@ from llm_agents.plateau_escape_agent import PlateauEscapeAgent
 from llm_agents.unit_test_generator import UnitTestGenerator
 from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.function_utils import *
+from utils.java_executor import JavaExecutor
 from utils.programmatic_mutator import ProgrammaticMutator
 
 

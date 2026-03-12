@@ -2,9 +2,12 @@ import subprocess
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+import logging
+
 from config.config_loader import get_config
 from utils.dataset_utils import *
-import logging
+from utils.function_utils import fully_qualified_class_name_from_source
 
 
 def get_public_method_line_ranges(java_code: str):
@@ -46,24 +49,6 @@ class JavaCodeCoverage:
         with (self.java_files_dir / f"{self.test_class}Test.java").open("r", encoding="utf-8") as file:
             self.java_code = file.read()
 
-
-    def get_fully_qualified_class_name(self) -> str:
-        """
-        Returns the fully qualified class name for the Java test class.
-        If the source file declares a package, the package name is prefixed.
-        Otherwise, the simple class name (file stem) is returned.
-        """
-        try:
-            tree = javalang.parse.parse(self.java_code)
-            package_name = getattr(getattr(tree, "package", None), "name", None)
-            if package_name:
-                return f"{package_name}.{self.test_class}Test"
-        except Exception:
-            # Fall back to simple class name if parsing fails for any reason
-            pass
-
-        return f"{self.test_class}Test"
-
     def compile_java_files(self, exec_dir: Path):
         """
         Compiles the Java test and source files using javac.
@@ -104,7 +89,9 @@ class JavaCodeCoverage:
         coverage_file = exec_dir / "coverage.exec"
 
         cfg = get_config()
-        fully_qualified_name = self.get_fully_qualified_class_name()
+        fully_qualified_name = fully_qualified_class_name_from_source(
+            self.java_code, f"{self.test_class}Test"
+        )
         try:
             result = subprocess.run(
                 [

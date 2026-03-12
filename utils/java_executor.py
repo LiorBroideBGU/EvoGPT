@@ -1,8 +1,11 @@
 import os
 import subprocess
-import javalang
-from config.config_loader import get_config
 from pathlib import Path
+
+import javalang
+
+from config.config_loader import get_config
+from utils.function_utils import fully_qualified_class_name_from_source
 
 
 class JavaExecutor:
@@ -58,23 +61,6 @@ class JavaExecutor:
         except Exception as e:
             return False, str(e)
 
-    def get_fully_qualified_class_name(self) -> str:
-        """
-        Returns the fully qualified class name for the Java test class.
-        If the source file declares a package, the package name is prefixed.
-        Otherwise, the simple class name (file stem) is returned.
-        """
-        try:
-            tree = javalang.parse.parse(self.java_code)
-            package_name = getattr(getattr(tree, "package", None), "name", None)
-            if package_name:
-                return f"{package_name}.{self.java_file_name}"
-        except Exception:
-            # Fall back to simple class name if parsing fails for any reason
-            pass
-
-        return self.java_file_name
-
     def run_java(self):
         """
         Compiles and runs a Java class using JUnit.
@@ -86,7 +72,9 @@ class JavaExecutor:
             if not compilation_successful:
                 return False, f"Compilation failed:\n{error}"
 
-            fully_qualified_name = self.get_fully_qualified_class_name()
+            fully_qualified_name = fully_qualified_class_name_from_source(
+                self.java_code, self.java_file_name
+            )
 
             # Run the compiled tests
             result = subprocess.run(
