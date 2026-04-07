@@ -1,3 +1,4 @@
+from pathlib import Path
 import zipfile
 from typing import List
 import os
@@ -7,7 +8,7 @@ import shutil
 from utils.java_executor import JavaExecutor
 
 
-def unzip_dataset(dataset_name: str, target_path: str, dataset_path: str):
+def unzip_dataset(dataset_name: str, target_path: Path, dataset_path: Path):
     """
     Unzips the dataset's zip into a directory.
     :param dataset_name: The name of the dataset. Will be saved as the directory of the dataset.
@@ -15,7 +16,7 @@ def unzip_dataset(dataset_name: str, target_path: str, dataset_path: str):
     :param dataset_path: The path to the dataset's zip file.
 
     """
-    dataset_path = f"{dataset_path}/{dataset_name}.zip"
+    dataset_path = dataset_path / f"{dataset_name}.zip"
     with zipfile.ZipFile(dataset_path, 'r') as zip_ref:
         zip_ref.extractall(target_path)
 
@@ -33,7 +34,7 @@ def add_imports(imports: List[str], java_code: str):
     imports.extend(lines)
     return '\n'.join(imports)
 
-def get_class_imports(source_folder: str, stacktrace: str):
+def get_class_imports(source_folder: Path, stacktrace: str):
     """
     Retrieves the missing imports list from the stacktrace and source_folder.
     :param source_folder: The path to the src folder containing the source code.
@@ -61,19 +62,18 @@ def get_class_imports(source_folder: str, stacktrace: str):
     class_names = list(set(class_names))
     class_names = class_names + missing_classes
     class_map = {}  # {class_name: [package_reference, ...]}
-    for root, dirs, files in os.walk(source_folder):
-        for file in files:
-            if file.endswith(".java"):
-                class_name = file[:-5]
-                root = root.replace("\\", ".")
-                root = root.replace("/", ".")
-                if "src.main.java." not in root:
-                    continue
-                ref = root.split("src.main.java.")[1]
-                if class_name not in class_map:
-                    class_map[class_name] = [ref]
-                else:
-                    class_map[class_name].append(ref)
+    for java_file in source_folder.glob("**/*.java"):
+        class_name = java_file.stem
+        package_name = java_file.parent.as_posix().replace("\\", ".").replace("/", ".")
+        if "src.main.java." not in package_name:
+            continue
+
+        ref = package_name.split("src.main.java.")[1]
+        if class_name not in class_map:
+            class_map[class_name] = [ref]
+        else:
+            class_map[class_name].append(ref)
+
     imports = []
     for name in class_names:
         if name not in class_map:
@@ -233,34 +233,41 @@ def read_java_file_as_string(java_file_path):
         print(f"An error occurred: {e}")
 
 
-def save_test_suite(test_suite_code,test_file_path):
+def save_test_suite(test_suite_code: str, test_file_path: Path | str):
+    path = Path(test_file_path)
     try:
-        with open(test_file_path, "w", encoding="utf-8") as file:
-            file.write(test_suite_code)
-    except Exception as e:
-        os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
-        with open(test_file_path, "w", encoding="utf-8") as file:
-            file.write(test_suite_code)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(test_suite_code, encoding="utf-8")
+    except Exception:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(test_suite_code, encoding="utf-8")
 
 
 
-def extract_project_name(path: str):
-    path = os.path.normpath(path)  # Normalize path separators
-    path_parts = path.split(os.sep)
+def extract_project_name(path: Path) -> Path:
+    """
+    Given a path to a Java file inside a benchmarks project, return the
+    ``benchmarks/<project>`` directory as a Path.
+    """
+    parts = path.parts
+    if "benchmarks" in parts:
+        idx = parts.index("benchmarks")
+        if idx + 1 < len(parts):
+            return Path(*parts[: idx + 2])
+    
+    # Fallback: just return the parent directory
+    return path.parent
 
-    if 'benchmarks' in path_parts:
-        benchmarks_index = path_parts.index('benchmarks')
-        if benchmarks_index + 1 < len(path_parts):
-            return os.sep.join(path_parts[:benchmarks_index + 2])  # Ensure proper path format
 
-    return None
-
-
-import re
-
-import re
 
 def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -> str:
+    """
+    Merges two Java unit tests into a single Java unit test.
+    :param java_test_1: The first Java unit test.
+    :param java_test_2: The second Java unit test.
+    :param class_name: The name of the class.
+    :return: The merged Java unit test.
+    """
     def get_package(code: str):
         match = re.search(r'^package\s+[\w.]+\s*;', code, re.MULTILINE)
         return match.group(0) if match else None
@@ -466,7 +473,7 @@ def merge_java_unit_tests(java_test_1: str, java_test_2: str, class_name: str) -
 
 
 
-def delete_file(file_path):
+def delete_paths(paths_to_delete: list[Path]) -> bool:
     """
     Deletes the file at the given file path.
 
@@ -477,14 +484,16 @@ def delete_file(file_path):
     - bool: True if the file was deleted successfully, False if the file does not exist.
     """
     try:
-        if os.path.isfile(file_path):  # Check if the file exists
-            os.remove(file_path)  # Delete the file
-            return True
-        elif os.path.isdir(file_path):
-            shutil.rmtree(file_path)
-        else:
-            return False
+        for path in paths_to_delete:
+            if path.is_file():
+                path.unlink()
+
+            elif path.is_dir():
+                shutil.rmtree(path)
+        
+        return True
     except Exception as e:
+        print(f"An error occurred: {e}")
         return False
 
 

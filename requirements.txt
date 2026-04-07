@@ -1,6 +1,9 @@
 # LangChain dependencies for LLM integration
-langchain==0.2.16
-langchain-openai==0.1.25
+# Use compatible, up-to-date LangChain packages
+langchain>=0.3.0
+langchain-core>=1.2.0
+langchain-openai>=0.3.0
+langchain-ollama>=0.2.0
 
 # Java code parsing
 javalang==0.13.0

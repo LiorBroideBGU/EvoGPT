@@ -1,7 +1,0 @@
-Below, is the java class that needs improved test coverage:
-{}
-Here is the coverage details for each method that didn't reach the 75% percent branch\line coverage threshold:
-{}
-Your focus should be on these methods, and on ensuring missed branches are covered.
-The following branches were missed in the current test suite. These lines contain uncovered conditional logic:
-{}

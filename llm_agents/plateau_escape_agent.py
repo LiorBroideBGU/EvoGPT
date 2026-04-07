@@ -6,17 +6,27 @@ for STAGNATION_THRESHOLD iterations). It generates targeted test methods using d
 LLM configurations and injects them into the best chromosome's test suite.
 """
 
-import os
 import asyncio
+import logging
 from typing import List, Tuple, Dict, Optional
+from pathlib import Path
 from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from config.config import API_KEY, MODEL
 from utils.function_utils import (
     extract_test_context,
     parse_generated_test_methods,
     read_java_file_as_string
 )
+from prompts.plateau_escape_prompts import *
+from prompts.unit_test_generator_prompts import (
+    SYSTEM_PROMPT_ASSERTION_HEAVY, 
+    SYSTEM_PROMPT_BUG_DETECTOR, 
+    SYSTEM_PROMPT_EDGE_CASE_EXPLORER, 
+    SYSTEM_PROMPT_HIGH_COVERAGE, 
+    SYSTEM_PROMPT_DEFAULT
+    )
+
 
 
 # Strategy configurations: (prompt_file_suffix, temperature)
@@ -28,6 +38,14 @@ INJECTION_STRATEGIES = [
     ('bug_detector', 0.8),
     ('default', 0.3),
 ]
+
+STRATEGY_PROMPT_MAP = {
+    'high_coverage': SYSTEM_PROMPT_HIGH_COVERAGE,
+    'assertion_heavy': SYSTEM_PROMPT_ASSERTION_HEAVY,
+    'edge_case_explorer': SYSTEM_PROMPT_EDGE_CASE_EXPLORER,
+    'bug_detector': SYSTEM_PROMPT_BUG_DETECTOR,
+    'default': SYSTEM_PROMPT_DEFAULT,
+}
 
 
 def get_all_injection_strategies() -> List[Tuple[str, float]]:
@@ -53,16 +71,6 @@ class PlateauEscapeAgent:
     3. Generated test methods are injected into the existing test suite
     """
     
-    # Maps strategy names to their corresponding system prompt files
-    # These are the same diverse prompts used in initial test generation
-    STRATEGY_PROMPT_MAP = {
-        'high_coverage': 'system_prompt_high_coverage.txt',
-        'assertion_heavy': 'system_prompt_assertion_heavy.txt',
-        'edge_case_explorer': 'system_prompt_edge_case_explorer.txt',
-        'bug_detector': 'system_prompt_bug_detector.txt',
-        'default': 'system_prompt_default.txt',
-    }
-    
     def __init__(self, api_key: str = None, model: str = None):
         """
         Initialize the PlateauEscapeAgent.
@@ -71,38 +79,10 @@ class PlateauEscapeAgent:
             api_key: OpenAI API key (defaults to config.API_KEY)
             model: LLM model name (defaults to config.MODEL)
         """
+        self.logger = logging.getLogger(__name__)
         self.api_key = api_key or API_KEY
         self.model = model or MODEL
         
-        # Load prompts
-        self.plateau_prompts_dir = os.path.abspath(os.path.join("prompts", "plateau_escape"))
-        self.unit_test_prompts_dir = os.path.abspath(os.path.join("prompts", "unit_test_generator"))
-        
-        # Load the injection-specific input prompt template
-        self.input_prompt_template = self._load_prompt(os.path.join(self.plateau_prompts_dir, "input_prompt.txt"))
-        
-        # Pre-load all strategy-specific system prompts
-        self.strategy_system_prompts = {}
-        for strategy_name, prompt_file in self.STRATEGY_PROMPT_MAP.items():
-            prompt_path = os.path.join(self.unit_test_prompts_dir, prompt_file)
-            if os.path.exists(prompt_path):
-                self.strategy_system_prompts[strategy_name] = self._load_prompt(prompt_path)
-            else:
-                # Fallback to default if specific prompt not found
-                print(f"Warning: Prompt file {prompt_file} not found, using default")
-                default_path = os.path.join(self.unit_test_prompts_dir, 'system_prompt_default.txt')
-                self.strategy_system_prompts[strategy_name] = self._load_prompt(default_path)
-        
-        # Load the injection-specific system prompt (used as a wrapper/modifier)
-        self.injection_context_prompt = self._load_prompt(
-            os.path.join(self.plateau_prompts_dir, "system_prompt.txt")
-        )
-    
-    def _load_prompt(self, path: str) -> str:
-        """Load a prompt file."""
-        with open(path, 'r') as f:
-            return f.read()
-    
     def _get_combined_system_prompt(self, strategy_name: str) -> str:
         """
         Combine the strategy-specific prompt with injection-specific instructions.
@@ -113,16 +93,16 @@ class PlateauEscapeAgent:
         Returns:
             Combined system prompt string
         """
-        base_prompt = self.strategy_system_prompts.get(
+        base_prompt = STRATEGY_PROMPT_MAP.get(
             strategy_name, 
-            self.strategy_system_prompts['default']
+            SYSTEM_PROMPT_DEFAULT
         )
         
         # Combine: base strategy prompt + injection-specific modifications
         combined = f"""{base_prompt}
 
 === ADDITIONAL INJECTION CONTEXT ===
-{self.injection_context_prompt}"""
+{SYSTEM_PROMPT}"""
         
         return combined
     
@@ -168,7 +148,7 @@ class PlateauEscapeAgent:
             system_prompt = self._get_combined_system_prompt(strategy_name)
             
             # Format the input prompt
-            input_prompt = self.input_prompt_template.format(
+            input_prompt = INPUT_PROMPT.format(
                 methods_count,           # Number of methods to generate
                 context_string,          # Existing test class context
                 source_code,             # Source code under test
@@ -191,17 +171,17 @@ class PlateauEscapeAgent:
             # Parse generated methods
             methods = parse_generated_test_methods(response.content)
             
-            print(f"    Strategy '{strategy_name}' (temp={temperature}): Generated {len(methods)} methods")
+            self.logger.debug(f"Strategy '{strategy_name}' (temp={temperature}): Generated {len(methods)} methods")
             return methods
             
         except Exception as e:
-            print(f"    Strategy '{strategy_name}' failed: {e}")
+            self.logger.error(f"Strategy '{strategy_name}' failed: {e}")
             return []
     
     async def generate_targeted_tests(
         self,
-        test_file_path: str,
-        source_code_path: str,
+        test_file_path: str | Path,
+        source_code_path: str | Path,
         branch_coverage: float,
         line_coverage: float,
         mutation_score: float,
@@ -223,13 +203,13 @@ class PlateauEscapeAgent:
         Returns:
             List of all generated (method_name, method_code) tuples from all agents
         """
-        print(f"\n  [PlateauEscapeAgent] Generating targeted tests...")
-        print(f"    Coverage gaps: branch={branch_coverage:.1f}%, line={line_coverage:.1f}%, mutation={mutation_score:.1f}%")
+        self.logger.debug(f"[PlateauEscapeAgent] Generating targeted tests...")
+        self.logger.debug(f"Coverage gaps: branch={branch_coverage:.1f}%, line={line_coverage:.1f}%, mutation={mutation_score:.1f}%")
         
         # Read test file and extract context
         test_file_code = read_java_file_as_string(test_file_path)
         if test_file_code is None:
-            print(f"    ERROR: Could not read test file at {test_file_path}")
+            self.logger.error(f"Could not read test file at {test_file_path}")
             return []
         
         context = extract_test_context(test_file_code)
@@ -238,13 +218,13 @@ class PlateauEscapeAgent:
         # Read source code
         source_code = read_java_file_as_string(source_code_path)
         if source_code is None:
-            print(f"    ERROR: Could not read source code at {source_code_path}")
+            self.logger.error(f"Could not read source code at {source_code_path}")
             return []
         
         # Use all strategies for maximum diversity (like initial generation)
         strategies = get_all_injection_strategies()
         
-        print(f"    Using all {len(strategies)} strategies: {[s[0] for s in strategies]}")
+        self.logger.debug(f"Using all {len(strategies)} strategies: {[s[0] for s in strategies]}")
         
         # Run all agents in parallel
         tasks = [
@@ -269,7 +249,7 @@ class PlateauEscapeAgent:
         for methods in results:
             all_methods.extend(methods)
         
-        print(f"    Total methods generated: {len(all_methods)}")
+        self.logger.debug(f"Total methods generated: {len(all_methods)}")
         return all_methods
     
     def deduplicate_methods(

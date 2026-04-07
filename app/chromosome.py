@@ -1,4 +1,3 @@
-import os
 from utils.JavaCodeCoverage.Jacoco import JavaCodeCoverage
 from utils.MutationScoreGenerator.PITest import PITestRunner
 # from llm_agents.mutation_assertion_generation_agent import MutationAssertionGenerator
@@ -6,6 +5,7 @@ from utils.function_utils import *
 import random
 import uuid
 from config.config import PROJECT, CLASS_PATH
+from pathlib import Path
 
 def extract_package_from_path(java_file_path):
     """
@@ -31,20 +31,13 @@ def extract_package_from_path(java_file_path):
     return package_name
 
 class Chromosome:
-    def __init__(self, path: str, thread_id: int = None):
+    def __init__(self, path: Path, thread_id: int = None):
         """
         Initialize a chromosome representing a unit test file.
         :param path: The folder where this unit test lives (e.g. .../JsonArray/3).
         """
         self.path = path
-        # Use os.path.split for cross-platform path handling
-        path_parts = path.split(os.sep)
-        # Remove empty strings from path parts
-        path_parts = [p for p in path_parts if p]
-        
-        # Extract java file name from path
-        # Path structure: .../project/ClassName/ThreadNum/javafiles
-        # So: path_parts[-3] should be ClassName when thread_id is provided
+        path_parts = [part for part in self.path.parts if part]
         try:
             if thread_id is not None:
                 # Path: .../gson/JsonArray/7/javafiles -> JsonArray is at -3
@@ -52,6 +45,7 @@ class Chromosome:
             else:
                 # For offspring paths without thread_id
                 self.java_file_name = path_parts[-5] if len(path_parts) >= 5 else path_parts[-3] if len(path_parts) >= 3 else path_parts[-1]
+        
         except IndexError:
             # Fallback: try to extract from path
             print(f"Warning: Could not extract class name from path: {path}, parts: {path_parts}")
@@ -85,9 +79,10 @@ class Chromosome:
         Locate the main test file inside the directory.
         This assumes there's only one test file in the directory.
         """
-        for file in os.listdir(f'{self.path}'):
-            if file.endswith(".java") and "Test" in file:
-                return os.path.join(self.path, file)
+        for file in self.path.glob("*.java"):
+            if "Test" in file.name:
+                return file.absolute()
+                
         raise FileNotFoundError(f"No Java test file found in {self.path}")
 
     def compute_fitness(self):
@@ -101,13 +96,16 @@ class Chromosome:
         package_name = extract_package_from_path(CLASS_PATH)
         fully_qualified_class = f"{package_name}.{self.java_file_name}"
         
-        jcc = JavaCodeCoverage(f"{self.path}", self.java_file_name, PROJECT, self.thread_id)
+        java_files_dir = self.path
+        jcc = JavaCodeCoverage(java_files_dir, self.java_file_name, PROJECT, self.thread_id)
+
+        parent_dir = self.path.parent
         mutation_scorer = PITestRunner(
             project_name=PROJECT,
             class_name=fully_qualified_class,  # fully qualified class name (e.g. org.apache.commons.cli.Option)
-            classfiles_dir=os.path.join(os.path.dirname(self.path), "classfiles"),
-            source_dir=self.path,
-            report_dir=os.path.join(os.path.dirname(self.path), "pitest_report")
+            classfiles_dir=parent_dir / "classfiles",
+            source_dir=java_files_dir,
+            report_dir=parent_dir / "pitest_report",
         )
         self.branch_coverage, self.line_coverage = jcc.get_average_coverage(thread_number=self.thread_id)
         self.mutation_score, self.tests_strength = mutation_scorer.run(self.java_file_name + 'Test')

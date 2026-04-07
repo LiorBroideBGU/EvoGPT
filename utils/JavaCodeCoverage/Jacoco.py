@@ -1,9 +1,10 @@
 import subprocess
 import os
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from config.config import JAVA_BIN, JAVAC_BIN
 from utils.dataset_utils import *
-
+import logging
 
 
 def get_public_method_line_ranges(java_code: str):
@@ -32,14 +33,15 @@ class JavaCodeCoverage:
         :param test_class: Name of the test class (e.g., JsonParserTest).
         :param project_name: Project name (e.g., gson).
         """
-        self.java_files_dir = java_files_dir  # Path to your Java files (source + test)
+        self.logger = logging.getLogger(__name__)
+        self.java_files_dir = Path(java_files_dir)  # Path to your Java files (source + test)
         self.test_class = test_class  # Name of your test class (e.g., JsonParserTest)
         self.project_name = project_name  # Project name (e.g., gson)
-        self.classpath = os.path.abspath(os.path.join("lib", "jars"))
+        self.classpath = Path("lib", "jars").resolve()
         self.thread_id = thread_id
         # Collect all .jar files in the lib/jars directory to form the classpath
-        jar_files = [f for f in os.listdir(self.classpath) if f.endswith('.jar')]
-        self.classpath_combined = os.pathsep.join([os.path.join(self.classpath, jar) for jar in jar_files])
+        jar_files = [p for p in self.classpath.glob("*.jar")]
+        self.classpath_combined = os.pathsep.join(p.as_posix() for p in jar_files)
 
     def compile_java_files(self, output_dir):
         """
@@ -48,42 +50,43 @@ class JavaCodeCoverage:
         :param output_dir: Directory where the compiled .class files will be saved.
         :return: bool indicating success or failure of the compilation process.
         """
+        output_dir = Path(output_dir)
         try:
             subprocess.run(
                 [
                     JAVAC_BIN,
                     "-cp", self.classpath_combined,  # Include all jars in the classpath
-                    "-d", output_dir,  # Output directory for .class files
-                    os.path.join(self.java_files_dir, f"{self.test_class}Test.java"),  # Test class
-                    os.path.join(self.java_files_dir, f"{self.test_class}.java")
+                    "-d", str(output_dir),  # Output directory for .class files
+                    str(self.java_files_dir / f"{self.test_class}Test.java"),  # Test class
+                    str(self.java_files_dir / f"{self.test_class}.java")
                     # Source class
                 ],
                 check=True,
                 capture_output=True,
                 text=True
             )
-            print(f"Compilation successful: {output_dir}")
+            self.logger.debug(f"Compilation successful: {output_dir}")
             return True
         except subprocess.CalledProcessError as e:
-            print(f"Compilation failed: {e.stderr}")
+            self.logger.error(f"Compilation failed: {e.stderr}")
             return False
 
-    def run_tests_with_coverage(self, output_dir):
+    def run_tests_with_coverage(self, output_dir: Path):
         """
         Runs the compiled tests with JaCoCo agent to collect coverage data.
 
         :param output_dir: Directory containing the compiled .class files.
         :return: bool indicating if the tests ran successfully and generated coverage data.
         """
-        jacoco_agent = os.path.join(self.classpath, 'jacocoagent.jar')
-        coverage_file = os.path.join(output_dir, "coverage.exec")
+        jacoco_agent = self.classpath / "jacocoagent.jar"
+        coverage_file = output_dir / "coverage.exec"
 
         try:
             result = subprocess.run(
                 [
                     JAVA_BIN,
-                    "-javaagent:" + jacoco_agent + f"=destfile={coverage_file}",  # JaCoCo agent argument
-                    "-cp", f"{output_dir}{os.pathsep}{self.classpath_combined}",
+                    "-javaagent:" + str(jacoco_agent) + f"=destfile={coverage_file}",  # JaCoCo agent argument
+                    "-cp", f"{str(output_dir)}{os.pathsep}{self.classpath_combined}",
                     "org.junit.runner.JUnitCore",  # Run the JUnit tests
                     self.test_class + 'Test'  # The test class name
                 ],
@@ -91,11 +94,11 @@ class JavaCodeCoverage:
                 capture_output=True,
                 text=True
             )
-            print(f"Tests ran successfully. Coverage data saved in {coverage_file}.")
+            self.logger.debug(f"Tests ran successfully. Coverage data saved in {coverage_file}.")
             return True
         except subprocess.CalledProcessError as e:
 
-            print(f"Test run failed: {e.stderr}")
+            self.logger.error(f"Test run failed: {e.stderr}")
             return False
 
     def convert_exec_to_xml(self,output_dir):
@@ -104,24 +107,28 @@ class JavaCodeCoverage:
 
         :param output_dir: Directory to save the .exec coverage data.
         """
+        output_dir = Path(output_dir)
         try:
             subprocess.run(
                 [
-                    JAVA_BIN, "-jar", os.path.abspath(os.path.join('lib', 'jars', 'jacococli.jar')),
-                    "report", os.path.join(output_dir, "coverage.exec"),  # .exec file to report on
+                    JAVA_BIN,
+                    "-jar",
+                    str(Path("lib", "jars", "jacococli.jar").resolve()),
+                    "report",
+                    str(output_dir / "coverage.exec"),  # .exec file to report on
                     "--classfiles",
-                    os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles") if self.thread_id else os.path.join(os.path.dirname(self.java_files_dir), "classfiles"),
+                    str(Path("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles")) if self.thread_id else str(self.java_files_dir.parent / "classfiles"),
                     # Path to class files (compiled files)
                     "--sourcefiles",
-                    os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "javafiles") if self.thread_id else self.java_files_dir,
+                    str(Path("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "javafiles")) if self.thread_id else str(self.java_files_dir),
                     # Path to the source files
-                    "--xml", os.path.join(output_dir, "coverage.xml")  # Output in XML format
+                    "--xml", str(output_dir / "coverage.xml")  # Output in XML format
                 ],
                 check=True
             )
-            print(f"Conversion to XML successful: {os.path.join(output_dir, "coverage.xml")}")
+            self.logger.debug(f"Conversion to XML successful: {output_dir / 'coverage.xml'}")
         except subprocess.CalledProcessError as e:
-            print(f"Error converting .exec to .xml: {str(e)}")
+            self.logger.error(f"Error converting .exec to .xml: {str(e)}")
 
     def generate_coverage_report(self):
         """
@@ -129,11 +136,11 @@ class JavaCodeCoverage:
         and converting the .exec file to an XML report.
         """
         if self.thread_id:
-            build_dir = os.path.join("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles")
+            build_dir = Path("results", "unit_tests", self.project_name, self.test_class, str(self.thread_id), "classfiles")
         else:
-            parent_path = os.path.dirname(self.java_files_dir)
-            build_dir  = os.path.join(parent_path, "classfiles")
-        os.makedirs(build_dir, exist_ok=True)
+            parent_path = self.java_files_dir.parent
+            build_dir = parent_path / "classfiles"
+        build_dir.mkdir(parents=True, exist_ok=True)
 
         # Step 1: Compile the Java files
         if not self.compile_java_files(build_dir):
@@ -183,7 +190,7 @@ class JavaCodeCoverage:
         return params  # return_type is ignored
 
     def parse_jacoco_xml(self, xml_file):
-        java_source_code = open(os.path.join(self.java_files_dir, f"{self.test_class}.java")).read()
+        java_source_code = (self.java_files_dir / f"{self.test_class}.java").read_text(encoding="utf-8")
         tree = ET.parse(xml_file)
         root = tree.getroot()
 

@@ -1,79 +1,77 @@
 from llm_agents.llm_agent import LLMAgent
-from langchain.schema import SystemMessage
+from langchain_core.messages import SystemMessage
 from utils.function_utils import *
 from utils.java_executor import *
 from utils.dataset_utils import *
+from pathlib import Path
+from prompts.unit_test_generator_prompts import *
 
-
+SYSTEM_PROMPT_MAP = {
+    0.3: SYSTEM_PROMPT_DEFAULT,
+    0.6: SYSTEM_PROMPT_ASSERTION_HEAVY,
+    0.8: SYSTEM_PROMPT_BUG_DETECTOR,
+    0.5: SYSTEM_PROMPT_EDGE_CASE_EXPLORER,
+    0.4: SYSTEM_PROMPT_HIGH_COVERAGE,
+}
 
 class UnitTestGenerator(LLMAgent):
-    def __init__(self, api_key, model, temperature):
+    """
+    Unit Test Generator agent for evolutionary unit test generation.
+    """
+
+    def __init__(self, api_key: str, model: str, temperature: float):
         super().__init__(api_key, model, temperature)
-        self.input_prompt = open(os.path.abspath(os.path.join("prompts", "unit_test_generator", "input_prompt.txt")),
-                                 'r').read()
-        if temperature == 0.3:
-            self.system_prompt = open(os.path.abspath(os.path.join("prompts", "unit_test_generator", "system_prompt_default.txt")),
-                                      'r').read()
-        elif temperature == 0.6:
-            self.system_prompt = open(os.path.abspath(os.path.join("prompts", "unit_test_generator", "system_prompt_assertion_heavy.txt")),
-                                      'r').read()
-        elif temperature == 0.8:
-            self.system_prompt = open(os.path.abspath(os.path.join("prompts", "unit_test_generator", "system_prompt_bug_detector.txt")),
-                                      'r').read()
-        elif temperature == 0.5:
-            self.system_prompt = open(os.path.abspath(os.path.join("prompts", "unit_test_generator", "system_prompt_edge_case_explorer.txt")),
-                                      'r').read()
-        elif temperature == 0.4:
-            self.system_prompt = open(os.path.abspath(os.path.join("prompts", "unit_test_generator", "system_prompt_high_coverage.txt")),
-                                      'r').read()
-        else:
-            self.system_prompt = open(os.path.abspath(os.path.join("prompts", "unit_test_generator", "system_prompt_default.txt")),
-                                      'r').read()
-        self.repair_prompt = open(os.path.abspath(os.path.join("prompts", "unit_test_generator", "repair_prompt.txt")),
-                                  'r').read()
-        self.syntax_error_prompt = open(
-            os.path.abspath(os.path.join("prompts", "unit_test_generator", "syntax_error_prompt.txt")), 'r').read()
+        self.system_prompt = SYSTEM_PROMPT_MAP[temperature]
 
     async def get_unit_test_for_class(self, session_id: str) -> str:
-        # Retrieve long-term memory specific to the session
-        long_term_memory = self.get_long_term_memory(session_id)
-
-        # Compose the prompt including the system message, long-term memory, and user input
+        """
+        Gets a unit test for the given class.
+        :param session_id: The session id
+        :return: The unit test
+        """
+        self.logger.debug(f"Getting unit test for class: {session_id}")
         system_message = SystemMessage(content=f"{self.system_prompt}")
-
-        # Get or create the message history for the session
         history = self.get_chat_history(session_id)
-
-        # Add system message and user prompt to the conversation
         messages = [system_message] + history.messages
         response = await self.chat_model.ainvoke(messages)
-
-        # Update the session chat history and long-term memory
         await history.add_assistant_message(response.content)
-
         return response.content
 
-    async def generation_repair_loop(self, java_file_path, project_id, iterations=4, thread_number=None):
+    async def generation_repair_loop(self, java_file_path: Path, project_id: str, iterations: int = 4, thread_number: int = None):
+        """
+        Generates a unit test for the given class.
+        :param java_file_path: The path to the Java file
+        :param project_id: The project id
+        :param iterations: The number of iterations
+        :param thread_number: The thread number
+        :return: The unit test
+        """
+        self.logger.debug(f"Generating unit test for class: {java_file_path}")
         java_code = read_java_file_as_string(java_file_path)
         java_code = clean_java_code(java_code)
         public_methods_list = get_public_method_signatures(java_code)
-        # Use os.path.basename for cross-platform compatibility
-        java_class_name = os.path.basename(java_file_path).split(".")[0]
-        self.update_long_term_memory('session1', self.input_prompt.format(public_methods_list,java_code))
+        self.logger.debug(f"Public methods list: {public_methods_list}")
+        java_class_name = java_file_path.stem
+        self.update_long_term_memory('session1', INPUT_PROMPT.format(public_methods_list, java_code))
+        self.logger.debug(f"Updating long-term memory for session: session1")
         current_test_suite = await self.get_unit_test_for_class(session_id='session1')
-        test_file_path = os.path.abspath(
-            os.path.join("results", "unit_tests", project_id, java_class_name, str(thread_number), 'javafiles',
-                         f"{java_class_name}Test.java")) if thread_number else os.path.abspath(
-            os.path.join("results", "unit_tests", project_id, java_class_name, 'javafiles',
-                         f"{java_class_name}Test.java"))
-        os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
-        save_test_suite(current_test_suite, test_file_path)
+        self.logger.debug(f"Current test suite: {current_test_suite}")
+
         if thread_number:
-            save_test_suite(java_code, os.path.abspath(
-                os.path.join("results", "unit_tests", project_id, java_class_name,str(thread_number), 'javafiles', f"{java_class_name}.java")))
+            base_dir = Path("results", "unit_tests", project_id, java_class_name, str(thread_number), "javafiles")
         else:
-            save_test_suite(java_code, os.path.abspath(
-                os.path.join("results", "unit_tests", project_id, java_class_name, 'javafiles', f"{java_class_name}.java")))
+            base_dir = Path("results", "unit_tests", project_id, java_class_name, "javafiles")
+
+        test_file_path = base_dir / f"{java_class_name}Test.java"
+        source_file_path = base_dir / f"{java_class_name}.java"
+
+        self.logger.debug(f"Test file path: {test_file_path}")
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        self.logger.debug(f"Saving test suite to: {test_file_path}")
+        save_test_suite(current_test_suite, test_file_path)
+        self.logger.debug(f"Saving Java code to: {source_file_path}")
+        save_test_suite(java_code, source_file_path)
 
         ## Generation repair loop
         executor = JavaExecutor(test_file_path)
@@ -82,7 +80,7 @@ class UnitTestGenerator(LLMAgent):
             try:
                 executor.check_java_code_syntax()
             except SyntaxError as e:
-                self.update_long_term_memory('session1', self.syntax_error_prompt.format(e))
+                self.update_long_term_memory('session1', SYNTAX_ERROR_PROMPT.format(e))
                 current_test_suite = await self.get_unit_test_for_class(session_id='session1')
                 save_test_suite(current_test_suite, test_file_path)
 
@@ -97,7 +95,7 @@ class UnitTestGenerator(LLMAgent):
                     compiled, compile_err = executor.compile_java()
 
             if not compiled:
-                self.update_long_term_memory('session1', self.repair_prompt.format(compile_err))
+                self.update_long_term_memory('session1', REPAIR_PROMPT.format(compile_err))
                 current_test_suite = await self.get_unit_test_for_class(session_id='session1')
                 save_test_suite(current_test_suite, test_file_path)
                 continue
@@ -114,7 +112,7 @@ class UnitTestGenerator(LLMAgent):
             if ran:
                 return
 
-            self.update_long_term_memory('session1', self.repair_prompt.format(run_err))
+            self.update_long_term_memory('session1', REPAIR_PROMPT.format(run_err))
             current_test_suite = await self.get_unit_test_for_class(session_id='session1')
             save_test_suite(current_test_suite, test_file_path)
 

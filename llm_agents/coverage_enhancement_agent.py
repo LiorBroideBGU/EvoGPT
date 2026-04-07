@@ -2,26 +2,39 @@
 from llm_agents.unit_test_generator import UnitTestGenerator
 from utils.function_utils import *
 from utils.java_executor import *
+from pathlib import Path
+from prompts.coverage_enhancement_generator_prompts import *
 
 class CoverageEnhancementAgent(UnitTestGenerator):
-    def __init__(self, api_key,model, temperature, java_file_path):
+    """
+    Coverage Enhancement Agent for evolutionary unit test generation.
+    """
+
+    def __init__(self, api_key: str, model: str, temperature: float, java_file_path: Path):
         super().__init__(api_key, model, temperature)
-        self.input_prompt = open(os.path.abspath(os.path.join("prompts", "coverage_enhancement_generator", "input_prompt.txt")),'r').read()
-        self.system_prompt = open(os.path.abspath(os.path.join("prompts", "coverage_enhancement_generator", "system_prompt.txt")),'r').read()
-        self.repair_prompt = open(os.path.abspath(os.path.join("prompts", "coverage_enhancement_generator", "repair_prompt.txt")),'r').read()
-        self.syntax_error_prompt = open(os.path.abspath(os.path.join("prompts", "coverage_enhancement_generator", "syntax_error_prompt.txt")),'r').read()
         self.java_file_path = java_file_path
 
-    async def generation_repair_loop(self,coverage_metrics, missed_branches, iterations=4, thread_number=None):
+    async def generation_repair_loop(self,coverage_metrics: dict, missed_branches: list, iterations: int = 4, thread_number: int = None):
+        """
+        Generates a coverage enhancement for the given class.
+        :param coverage_metrics: The coverage metrics
+        :param missed_branches: The missed branches
+        :param iterations: The number of iterations
+        :param thread_number: The thread number
+        :return: The coverage enhancement
+        """
         java_code = read_java_file_as_string(self.java_file_path)
         java_code = clean_java_code(java_code)
-        # Use os.path.basename for cross-platform compatibility
-        project_id = os.path.basename(extract_project_name(self.java_file_path))
-        java_class_name = os.path.basename(self.java_file_path).split(".")[0]
-        self.update_long_term_memory('session1',self.input_prompt.format(java_code, coverage_metrics, missed_branches))
+        project_root = extract_project_name(self.java_file_path)
+        project_id = project_root.name
+        java_class_name = self.java_file_path.stem
+        self.update_long_term_memory('session1', INPUT_PROMPT.format(java_code, coverage_metrics, missed_branches))
         current_test_suite = await self.get_unit_test_for_class(session_id='session1')
-        test_file_path = os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,str(thread_number),'javafiles', f"{java_class_name}EnhancedTest.java")) if thread_number else os.path.abspath(os.path.join("results", "unit_tests", project_id,java_class_name,'javafiles', f"{java_class_name}EnhancedTest.java"))
-        os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
+        if thread_number:
+            test_file_path = Path("results", "unit_tests", project_id, java_class_name, str(thread_number), "javafiles", f"{java_class_name}EnhancedTest.java")
+        else:
+            test_file_path = Path("results", "unit_tests", project_id, java_class_name, "javafiles", f"{java_class_name}EnhancedTest.java")
+        test_file_path.parent.mkdir(parents=True, exist_ok=True)
         save_test_suite(current_test_suite, test_file_path)
 
         ## Generation repair loop
@@ -31,7 +44,7 @@ class CoverageEnhancementAgent(UnitTestGenerator):
             try:
                 executor.check_java_code_syntax()
             except SyntaxError as e:
-                self.update_long_term_memory('session1', self.syntax_error_prompt.format(e))
+                self.update_long_term_memory('session1', SYNTAX_ERROR_PROMPT.format(e))
                 current_test_suite = await self.get_unit_test_for_class(session_id='session1')
                 save_test_suite(current_test_suite, test_file_path)
 
@@ -46,7 +59,7 @@ class CoverageEnhancementAgent(UnitTestGenerator):
                     compiled, compile_err = executor.compile_java()
 
             if not compiled:
-                self.update_long_term_memory('session1', self.repair_prompt.format(compile_err))
+                self.update_long_term_memory('session1', REPAIR_PROMPT.format(compile_err))
                 current_test_suite = await self.get_unit_test_for_class(session_id='session1')
                 save_test_suite(current_test_suite, test_file_path)
                 continue

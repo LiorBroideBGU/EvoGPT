@@ -1,4 +1,4 @@
-from langchain.schema import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 
 class ChatMessageHistory:

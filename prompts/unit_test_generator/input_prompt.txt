@@ -1,3 +1,0 @@
-Generate a unit test, with tests for these public methods only: {}.
-Class source code:
- {}

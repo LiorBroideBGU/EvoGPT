@@ -2,25 +2,26 @@ import os
 import subprocess
 import shutil
 import urllib.request
+from pathlib import Path
 from config.config import JAVA_BIN, JAVAC_BIN
 
 EVOSUITE_VERSION = "1.2.0"
 EVOSUITE_JAR_URL = f"https://github.com/EvoSuite/evosuite/releases/download/v{EVOSUITE_VERSION}/evosuite-{EVOSUITE_VERSION}.jar"
 EVOSUITE_RUNTIME_JAR_URL = f"https://github.com/EvoSuite/evosuite/releases/download/v{EVOSUITE_VERSION}/evosuite-standalone-runtime-{EVOSUITE_VERSION}.jar"
 
-JARS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jars")
+JARS_DIR = Path(__file__).resolve().parent / "jars"
 
 
 def download_evosuite_jars(force=False):
-    os.makedirs(JARS_DIR, exist_ok=True)
-    jar_path = os.path.join(JARS_DIR, f"evosuite-{EVOSUITE_VERSION}.jar")
-    runtime_path = os.path.join(JARS_DIR, f"evosuite-standalone-runtime-{EVOSUITE_VERSION}.jar")
+    JARS_DIR.mkdir(parents=True, exist_ok=True)
+    jar_path = JARS_DIR / f"evosuite-{EVOSUITE_VERSION}.jar"
+    runtime_path = JARS_DIR / f"evosuite-standalone-runtime-{EVOSUITE_VERSION}.jar"
 
     for url, dest in [(EVOSUITE_JAR_URL, jar_path), (EVOSUITE_RUNTIME_JAR_URL, runtime_path)]:
-        if os.path.exists(dest) and not force:
-            print(f"[EvoSuite] Already exists: {os.path.basename(dest)}")
+        if dest.exists() and not force:
+            print(f"[EvoSuite] Already exists: {dest.name}")
             continue
-        print(f"[EvoSuite] Downloading {os.path.basename(dest)}...")
+        print(f"[EvoSuite] Downloading {dest.name}...")
         urllib.request.urlretrieve(url, dest)
         print(f"[EvoSuite] Saved to {dest}")
 
@@ -30,26 +31,26 @@ def download_evosuite_jars(force=False):
 class EvoSuiteRunner:
     def __init__(self, project_name, class_path_source, output_base_dir="comparison_results"):
         self.project_name = project_name
-        self.class_path_source = os.path.abspath(class_path_source)
+        self.class_path_source = Path(class_path_source).resolve()
 
-        filename = os.path.basename(class_path_source)
-        self.class_name = os.path.splitext(filename)[0]
+        filename = self.class_path_source.name
+        self.class_name = self.class_path_source.stem
         self.fqn = self._extract_fqn(class_path_source)
 
-        self.evosuite_jar = os.path.join(JARS_DIR, f"evosuite-{EVOSUITE_VERSION}.jar")
-        self.runtime_jar = os.path.join(JARS_DIR, f"evosuite-standalone-runtime-{EVOSUITE_VERSION}.jar")
-        self.output_base_dir = output_base_dir
+        self.evosuite_jar = JARS_DIR / f"evosuite-{EVOSUITE_VERSION}.jar"
+        self.runtime_jar = JARS_DIR / f"evosuite-standalone-runtime-{EVOSUITE_VERSION}.jar"
+        self.output_base_dir = Path(output_base_dir)
 
-        self.lib_jars_dir = os.path.abspath("lib/jars")
+        self.lib_jars_dir = Path("lib", "jars").resolve()
 
-        if not os.path.exists(self.evosuite_jar):
+        if not self.evosuite_jar.exists():
             raise FileNotFoundError(
                 f"EvoSuite JAR not found at {self.evosuite_jar}. "
                 "Run with --download-evosuite first."
             )
 
     def _extract_fqn(self, java_file_path):
-        normalized = java_file_path.replace('\\', '/')
+        normalized = str(java_file_path).replace('\\', '/')
         if '/src/main/java/' in normalized:
             rel = normalized.split('/src/main/java/')[1]
         elif '/src/' in normalized:
@@ -63,12 +64,12 @@ class EvoSuiteRunner:
 
     def _find_source_root(self):
         """Find the project source root (e.g. .../src/main/java/)."""
-        normalized = self.class_path_source.replace('\\', '/')
+        normalized = str(self.class_path_source).replace('\\', '/')
         if '/src/main/java/' in normalized:
             return normalized.split('/src/main/java/')[0] + '/src/main/java/'
         if '/src/' in normalized:
             return normalized.split('/src/')[0] + '/src/'
-        return os.path.dirname(self.class_path_source)
+        return str(self.class_path_source.parent)
 
     def _compile_source_for_evosuite(self, working_dir):
         """
@@ -77,10 +78,10 @@ class EvoSuiteRunner:
         pre-built JAR (which may be compiled with a newer Java) on EvoSuite's
         classpath.
         """
-        classfiles_dir = os.path.join(working_dir, "compiled_source")
-        os.makedirs(classfiles_dir, exist_ok=True)
+        classfiles_dir = Path(working_dir) / "compiled_source"
+        classfiles_dir.mkdir(parents=True, exist_ok=True)
 
-        dep_jars = [os.path.join(self.lib_jars_dir, f)
+        dep_jars = [str(self.lib_jars_dir / f)
                     for f in os.listdir(self.lib_jars_dir) if f.endswith('.jar')]
 
         src_root = self._find_source_root()
@@ -88,7 +89,7 @@ class EvoSuiteRunner:
         for root, dirs, files in os.walk(src_root):
             for f in files:
                 if f.endswith('.java'):
-                    java_files.append(os.path.join(root, f))
+            java_files.append(os.path.join(root, f))
 
         if not java_files:
             print(f"[EvoSuite] No .java files found under {src_root}")
@@ -98,7 +99,7 @@ class EvoSuiteRunner:
             subprocess.run(
                 [JAVAC_BIN, "-source", "11", "-target", "11",
                  "-cp", os.pathsep.join(dep_jars),
-                 "-d", classfiles_dir] + java_files,
+                 "-d", str(classfiles_dir)] + java_files,
                 check=True, capture_output=True, text=True,
             )
         except subprocess.CalledProcessError as e:
@@ -120,12 +121,9 @@ class EvoSuiteRunner:
             Path to the generated test file, or None on failure
         """
         if working_dir is None:
-            working_dir = os.path.join(
-                self.output_base_dir, "evosuite_runs",
-                self.project_name, self.class_name,
-                f"{budget_type}_{budget}"
-            )
-        os.makedirs(working_dir, exist_ok=True)
+            working_dir = self.output_base_dir / "evosuite_runs" / self.project_name / self.class_name / f"{budget_type}_{budget}"
+        working_dir = Path(working_dir)
+        working_dir.mkdir(parents=True, exist_ok=True)
 
         compiled_dir = self._compile_source_for_evosuite(working_dir)
         if compiled_dir is None:
@@ -133,10 +131,10 @@ class EvoSuiteRunner:
             return None
 
         project_cp = os.path.abspath(compiled_dir)
-        test_dir = os.path.abspath(os.path.join(working_dir, 'evosuite-tests'))
+        test_dir = (working_dir / "evosuite-tests").resolve()
 
         cmd = [
-            JAVA_BIN, "-jar", os.path.abspath(self.evosuite_jar),
+            JAVA_BIN, "-jar", str(self.evosuite_jar.resolve()),
             "-class", self.fqn,
             "-projectCP", project_cp,
             f"-Dtest_dir={test_dir}",
@@ -174,7 +172,7 @@ class EvoSuiteRunner:
             print(f"[EvoSuite] Error: {e}")
             return None
 
-        test_dir = os.path.join(working_dir, "evosuite-tests")
+        test_dir = working_dir / "evosuite-tests"
         test_file = self._find_test_file(test_dir)
         if test_file is None:
             print(f"[EvoSuite] No test file generated in {test_dir}")
@@ -182,7 +180,7 @@ class EvoSuiteRunner:
 
         print(f"[EvoSuite] Test generated: {test_file}")
         self._sanitize_test_for_jacoco(test_file)
-        return test_file
+        return str(test_file)
 
     @staticmethod
     def _find_method_end(content, brace_start):
@@ -297,13 +295,12 @@ class EvoSuiteRunner:
         print(f"[EvoSuite] Sanitized test for standalone JUnit 4: {test_file}")
 
     def _find_test_file(self, test_dir):
-        if not os.path.exists(test_dir):
+        test_dir = Path(test_dir)
+        if not test_dir.exists():
             return None
-        for root, dirs, files in os.walk(test_dir):
-            for f in files:
-                if f.endswith("_ESTest.java"):
-                    return os.path.join(root, f)
+        for path in test_dir.rglob("*_ESTest.java"):
+            return path
         return None
 
     def get_runtime_jar(self):
-        return self.runtime_jar if os.path.exists(self.runtime_jar) else None
+        return str(self.runtime_jar) if self.runtime_jar.exists() else None

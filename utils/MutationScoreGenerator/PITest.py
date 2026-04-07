@@ -1,36 +1,40 @@
 import os
 import subprocess
+from pathlib import Path
 from config.config import JAVA_BIN, JAVAC_BIN
 import re
+import logging
+
 class PITestRunner:
-    def __init__(self, project_name, class_name, classfiles_dir, source_dir, report_dir="pitest_report"):
+    def __init__(self, project_name: str, class_name: str, classfiles_dir: Path, source_dir: Path, report_dir: Path = Path("pitest_report")):
+        self.logger = logging.getLogger(__name__)
         self.project_name = project_name
         self.class_name = class_name  # e.g., com.google.gson.JsonArray
-        self.classfiles_dir = os.path.abspath(classfiles_dir)
-        self.source_dir = os.path.abspath(source_dir)
-        self.report_dir = os.path.abspath(report_dir)
+        self.classfiles_dir = classfiles_dir.resolve()
+        self.source_dir = source_dir.resolve()
+        self.report_dir = report_dir.resolve()
 
         # Points to pitest-command-line.jar (not included in lib/jars)
-        self.pitest_cli_jar = os.path.abspath("utils/MutationScoreGenerator/jars/pitest-command-line-1.19.0.jar")
+        self.pitest_cli_jar = Path("utils/MutationScoreGenerator/jars/pitest-command-line-1.19.0.jar").resolve()
         
         # Check if PITest jar exists
-        if not os.path.exists(self.pitest_cli_jar):
-            print(f"[PITest] WARNING: PITest jar not found at {self.pitest_cli_jar}")
-            print(f"[PITest] Mutation testing will be skipped. Download from: https://github.com/hcoles/pitest/releases")
+        if not self.pitest_cli_jar.exists():
+            self.logger.warning(f"PITest jar not found at {self.pitest_cli_jar}")
+            self.logger.warning("Mutation testing will be skipped. Download from: https://github.com/hcoles/pitest/releases")
             self.pitest_available = False
         else:
             self.pitest_available = True
 
-        self.jars_dir = os.path.abspath("lib/jars")
+        self.jars_dir = Path("lib", "jars").resolve()
         self.classpath = self._build_classpath()
 
     def _build_classpath(self):
-        all_jars = [os.path.join(self.jars_dir, f) for f in os.listdir(self.jars_dir) if f.endswith(".jar")]
+        all_jars = [str(self.jars_dir / f) for f in os.listdir(self.jars_dir) if f.endswith(".jar")]
         
         # Add PITest jars
-        pitest_jars_dir = os.path.dirname(self.pitest_cli_jar)
-        if os.path.exists(pitest_jars_dir):
-            pitest_jars = [os.path.join(pitest_jars_dir, f) for f in os.listdir(pitest_jars_dir) if f.endswith(".jar")]
+        pitest_jars_dir = Path(self.pitest_cli_jar).parent
+        if pitest_jars_dir.exists():
+            pitest_jars = [str(pitest_jars_dir / f) for f in os.listdir(pitest_jars_dir) if f.endswith(".jar")]
             all_jars.extend(pitest_jars)
         
         return os.pathsep.join(all_jars)

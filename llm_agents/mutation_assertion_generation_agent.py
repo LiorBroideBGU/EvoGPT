@@ -1,25 +1,33 @@
 from numpy.lib.utils import source
 
 from llm_agents.llm_agent import LLMAgent
-from langchain.schema import SystemMessage
-from llm_agents.unit_test_generator import UnitTestGenerator
+from langchain_core.messages import SystemMessage
 from utils.function_utils import *
 from utils.java_executor import *
 import random
 from config.config import *
-
+from pathlib import Path
+from prompts.mutatation_assertion_generator_prompts import *
 
 
 class MutationAssertionGenerator(LLMAgent):
-    def __init__(self,api_key, model, temperature, unit_test_path, source_code_path):
+    """
+    Mutation Assertion Generator agent for evolutionary unit test generation.
+    """
+
+    def __init__(self,api_key: str, model: str, temperature: float, unit_test_path: Path, source_code_path: Path):
         super().__init__(api_key, model, temperature)
         self.unit_test_path = unit_test_path
         self.source_code_path = source_code_path
         self.unit_test_java_executor = JavaExecutor(java_file_path=unit_test_path)
-        self.system_prompt = open(os.path.abspath(os.path.join("prompts", "mutation_assertion_generator", "system_prompt.txt")),'r').read()
-        self.input_prompt = open(os.path.abspath(os.path.join("prompts", "mutation_assertion_generator", "input_prompt.txt")),'r').read()
 
     def extract_test_methods(self, code: str):
+        """
+        Extracts test methods from the given code.
+        :param code: The code to extract test methods from
+        :return: A list of test methods
+        """
+        self.logger.debug(f"Extracting test methods from code: {code}")
         method_pattern = re.compile(r'@Test\s+public\s+void\s+(\w+)\s*\([^)]*\)\s*\{', re.MULTILINE)
         methods = []
         for match in method_pattern.finditer(code):
@@ -38,9 +46,21 @@ class MutationAssertionGenerator(LLMAgent):
         return methods
 
     def get_imports(self,code: str):
+        """
+        Extracts imports from the given code.
+        :param code: The code to extract imports from
+        :return: A set of imports
+        """
+        self.logger.debug(f"Extracting imports from code: {code}")
         return set(re.findall(r'^import\s+.*?;', code, re.MULTILINE))
 
     def get_fields(self,code: str):
+        """
+        Extracts fields from the given code.
+        :param code: The code to extract fields from
+        :return: A list of fields
+        """
+        self.logger.debug(f"Extracting fields from code: {code}")
         pattern = re.compile(
             r'^\s*(private|protected|public)\s+[\w\<\>\[\]]+\s+\w+\s*;',
             re.MULTILINE
@@ -53,11 +73,16 @@ class MutationAssertionGenerator(LLMAgent):
         return fields
 
     async def get_model_response(self):
+        """
+        Gets a response from the model.
+        :return: The response from the model
+        """
+        self.logger.debug("Getting model response")
         # Retrieve long-term memory specific to the session
         long_term_memory = self.get_long_term_memory('session1')
 
         # Compose the prompt including the system message, long-term memory, and user input
-        system_message = SystemMessage(content=f"{self.system_prompt}")
+        system_message = SystemMessage(content=f"{SYSTEM_PROMPT}")
 
         # Get or create the message history for the session
         history = self.get_chat_history('session1')
@@ -72,6 +97,13 @@ class MutationAssertionGenerator(LLMAgent):
         return response.content
 
     def replace_test_method(self,original_code: str, new_method_code: str) -> str:    # Extract method name from new method
+        """
+        Replaces a test method in the original code with a new test method.
+        :param original_code: The original code
+        :param new_method_code: The new test method code
+        :return: The updated code
+        """
+        self.logger.debug(f"Replacing test method in original code: {original_code} with new test method: {new_method_code}")
         method_name_match = re.search(r'@Test\s+public\s+void\s+(\w+)\s*\(', new_method_code)
         if not method_name_match:
             raise ValueError("Could not extract method name from new test method.")
@@ -106,6 +138,11 @@ class MutationAssertionGenerator(LLMAgent):
         return updated_code
 
     async def assertion_generation(self):
+        """
+        Generates assertions for the test methods.
+        :return: The updated code
+        """
+        self.logger.debug("Generating assertions for test methods")
         old_java_source_code = read_java_file_as_string(self.source_code_path)
         old_unit_test = read_java_file_as_string(self.unit_test_path)
         test_methods = self.extract_test_methods(old_unit_test)
@@ -115,7 +152,7 @@ class MutationAssertionGenerator(LLMAgent):
             if random.random() <= 1/num_of_test_methods:
                 fields = self.get_fields(old_java_source_code)
                 imports = self.get_imports(old_java_source_code)
-                self.update_long_term_memory('session1', self.input_prompt.format(test_method, old_java_source_code, f"Fields: {fields}, Imports: {imports}"))
+                self.update_long_term_memory('session1', INPUT_PROMPT.format(test_method, old_java_source_code, f"Fields: {fields}, Imports: {imports}"))
                 new_test_method =  await self.get_model_response()
                 new_unit_test = self.replace_test_method(old_unit_test, new_test_method)
                 save_test_suite(new_unit_test, self.unit_test_path)
